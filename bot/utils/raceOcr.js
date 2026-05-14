@@ -2,9 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 
-const DEFAULT_TIMEOUT_MS = 120000;
+const DEFAULT_TIMEOUT_MS = 300000;
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-const MAX_RETRIES = 2;
+const DEFAULT_MAX_RETRIES = 4;
 
 function commandName(value, fallback) {
     const text = String(value || "").trim();
@@ -218,6 +218,38 @@ async function sleep(ms) {
     await new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function geminiTimeoutMs(settings = {}) {
+    const value = Number(settings.geminiTimeoutMs ?? settings.timeoutMs ?? process.env.GEMINI_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : DEFAULT_TIMEOUT_MS;
+}
+
+function geminiMaxRetries(settings = {}) {
+    const value = Number(settings.geminiMaxRetries ?? process.env.GEMINI_MAX_RETRIES ?? DEFAULT_MAX_RETRIES);
+    return Number.isFinite(value) && value >= 0 ? Math.min(10, Math.round(value)) : DEFAULT_MAX_RETRIES;
+}
+
+function geminiRetryDelayMs(attempt) {
+    return Math.min(15000, 1000 * (2 ** attempt));
+}
+
+function isRetryableGeminiError(error) {
+    return error?.name === "AbortError" || [408, 429, 500, 502, 503, 504].includes(Number(error?.status));
+}
+
+function geminiAttemptMessage(error, attempt, maxRetries, timeoutMs) {
+    const prefix = `Gemini Flash attempt ${attempt + 1}/${maxRetries + 1}`;
+    const status = Number(error?.status);
+
+    if (error?.name === "AbortError") {
+        return `${prefix} timed out after ${Math.round(timeoutMs / 1000)}s.`;
+    }
+
+    if (status === 429) return `${prefix} was rate limited (429).`;
+    if ([500, 502, 503, 504].includes(status)) return `${prefix} hit a temporary API error (${status}).`;
+
+    return `${prefix} failed: ${error?.message || "Unknown error"}`;
+}
+
 async function callGemini(parts, settings = {}) {
     const key = geminiApiKey(settings);
     if (!key) {
@@ -232,11 +264,13 @@ async function callGemini(parts, settings = {}) {
         }
     };
     const url = geminiEndpoint(settings);
+    const timeoutMs = geminiTimeoutMs(settings);
+    const maxRetries = geminiMaxRetries(settings);
     let lastError;
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), Number(settings.timeoutMs || DEFAULT_TIMEOUT_MS));
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
             const response = await fetch(url, {
@@ -267,10 +301,32 @@ async function callGemini(parts, settings = {}) {
         } catch (error) {
             clearTimeout(timeout);
             lastError = error;
-            const retryable = error.name === "AbortError" || [408, 429, 500, 502, 503, 504].includes(Number(error.status));
-            if (!retryable || attempt === MAX_RETRIES) break;
-            await sleep(700 * (attempt + 1));
+            const retryable = isRetryableGeminiError(error);
+            const canRetry = retryable && attempt < maxRetries;
+            const message = geminiAttemptMessage(error, attempt, maxRetries, timeoutMs);
+
+            if (canRetry) {
+                const delayMs = geminiRetryDelayMs(attempt);
+                console.warn(`${message} Retrying in ${delayMs}ms.`);
+                await sleep(delayMs);
+                continue;
+            }
+
+            console.warn(message);
+            break;
         }
+    }
+
+    if (lastError?.name === "AbortError") {
+        throw new Error(`Gemini Flash extraction timed out after ${Math.round(timeoutMs / 1000)} seconds. Try fewer screenshots, lower-resolution screenshots, rerun Gemini for the session, or raise GEMINI_TIMEOUT_MS.`);
+    }
+
+    const status = Number(lastError?.status);
+    if (status === 429) {
+        throw new Error("Gemini Flash API rate-limited this request (429). Wait a minute and rerun Gemini for the session, or lower concurrent spreadsheet processing.");
+    }
+    if ([500, 502, 503, 504].includes(status)) {
+        throw new Error(`Gemini Flash API is temporarily unavailable (${status}). Rerun Gemini for the session after the API recovers, or increase GEMINI_MAX_RETRIES.`);
     }
 
     throw lastError;

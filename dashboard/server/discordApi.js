@@ -61,7 +61,10 @@ async function discordBotRequest(path, options = {}) {
     }
 
     if (!response.ok) {
-        throw new Error(data.message || data.error || `Discord API returned ${response.status}`);
+        const error = new Error(data.message || data.error || `Discord API returned ${response.status}`);
+        error.status = response.status;
+        error.body = data;
+        throw error;
     }
 
     return data;

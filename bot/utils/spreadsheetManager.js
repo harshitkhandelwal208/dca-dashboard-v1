@@ -99,7 +99,7 @@ async function requireSpreadsheetAccess(interaction, teamConfig) {
 }
 
 function sessionWindowMs(config) {
-    return Math.max(1, Number(config?.spreadsheets?.sessionWindowMinutes || 5)) * 60 * 1000;
+    return Math.max(1, Number(config?.spreadsheets?.sessionWindowMinutes || 1)) * 60 * 1000;
 }
 
 function sessionTimerKey(session) {

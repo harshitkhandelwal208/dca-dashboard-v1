@@ -8,6 +8,7 @@ const STATE_COOKIE = "dca_dashboard_state";
 const SESSION_TTL_MS = Math.max(1, Number(process.env.DASHBOARD_SESSION_HOURS || 8)) * 60 * 60 * 1000;
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ROLE_RECHECK_MS = Math.max(1, Number(process.env.DASHBOARD_ROLE_RECHECK_MINUTES || 5)) * 60 * 1000;
+const ROLE_RECHECK_GRACE_MS = Math.max(1, Number(process.env.DASHBOARD_ROLE_RECHECK_GRACE_MINUTES || 30)) * 60 * 1000;
 
 const sessionSecret = process.env.DASHBOARD_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const sessions = new Map();
@@ -288,6 +289,15 @@ async function sessionStillHasRole(session) {
 
         return ok;
     } catch (error) {
+        const cachedRoles = Array.isArray(session.memberRoles) ? session.memberRoles : [];
+        const lastVerifiedAt = Number(session.lastRoleCheckAt || 0);
+        const recentlyVerified = lastVerifiedAt > 0 && Date.now() - lastVerifiedAt < ROLE_RECHECK_GRACE_MS;
+
+        if (recentlyVerified && cachedRoles.includes(allowedRoleId)) {
+            console.warn("Dashboard role recheck failed; using cached verified role:", error.message);
+            return true;
+        }
+
         console.error("Dashboard role recheck failed:", error.message);
         return null;
     }

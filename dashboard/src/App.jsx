@@ -730,10 +730,12 @@ export default function App() {
     function renderSpreadsheets() {
         const spreadsheets = config.spreadsheets || {
             enabled: false,
-            sessionWindowMinutes: 5,
+            sessionWindowMinutes: 1,
             outputFormat: "xlsx",
             libreOfficePath: "",
             geminiModel: "gemini-2.5-flash",
+            geminiTimeoutMs: 300000,
+            geminiMaxRetries: 4,
             rawDataRetentionDays: 31,
             teams: []
         };
@@ -744,7 +746,7 @@ export default function App() {
                     <div className="form-grid compact">
                         <Toggle label="Enabled" checked={Boolean(spreadsheets.enabled)} onChange={value => patch("spreadsheets.enabled", value)} />
                         <Field label="Grouping window">
-                            <TimeInput min="1" max="30" value={spreadsheets.sessionWindowMinutes || 5} onChange={event => patch("spreadsheets.sessionWindowMinutes", Number(event.target.value))} />
+                            <TimeInput min="1" max="30" value={spreadsheets.sessionWindowMinutes || 1} onChange={event => patch("spreadsheets.sessionWindowMinutes", Number(event.target.value))} />
                         </Field>
                         <Field label="Output format">
                             <select className="input" value={spreadsheets.outputFormat || "xlsx"} onChange={event => patch("spreadsheets.outputFormat", event.target.value)}>
@@ -754,6 +756,8 @@ export default function App() {
                         </Field>
                         <Field label="LibreOffice path"><TextInput placeholder="Leave blank; Node writes XLSX" value={spreadsheets.libreOfficePath || ""} onChange={event => patch("spreadsheets.libreOfficePath", event.target.value)} /></Field>
                         <Field label="Gemini Flash model"><TextInput value={spreadsheets.geminiModel || "gemini-2.5-flash"} onChange={event => patch("spreadsheets.geminiModel", event.target.value)} /></Field>
+                        <Field label="Gemini timeout ms"><TextInput type="number" min="30000" max="900000" value={spreadsheets.geminiTimeoutMs || 300000} onChange={event => patch("spreadsheets.geminiTimeoutMs", Number(event.target.value))} /></Field>
+                        <Field label="Gemini retries"><TextInput type="number" min="0" max="10" value={spreadsheets.geminiMaxRetries ?? 4} onChange={event => patch("spreadsheets.geminiMaxRetries", Number(event.target.value))} /></Field>
                         <Field label="Raw data retention days"><TimeInput min="1" max="370" value={spreadsheets.rawDataRetentionDays || 31} onChange={event => patch("spreadsheets.rawDataRetentionDays", Number(event.target.value))} /></Field>
                     </div>
                 </SectionCard>

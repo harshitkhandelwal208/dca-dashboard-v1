@@ -5,7 +5,7 @@ const CONFIG_SCOPE = "dashboardConfig";
 const CONFIG_PATH = filePathFor(CONFIG_SCOPE);
 const SNOWFLAKE_RE = /^\d{10,25}$/;
 const HEX_COLOR_RE = /^#?[0-9a-f]{6}$/i;
-const CONFIG_VERSION = 6;
+const CONFIG_VERSION = 7;
 
 const DEFAULT_RECRUITMENT_QUESTIONS = [
     "Which team do you want to join?",
@@ -156,10 +156,12 @@ const DEFAULT_CONFIG = {
     },
     spreadsheets: {
         enabled: false,
-        sessionWindowMinutes: 5,
+        sessionWindowMinutes: 1,
         outputFormat: "xlsx",
         libreOfficePath: "",
         geminiModel: "gemini-2.5-flash",
+        geminiTimeoutMs: 300000,
+        geminiMaxRetries: 4,
         rawDataRetentionDays: 31,
         teams: DEFAULT_SPREADSHEET_TEAMS
     },
@@ -474,10 +476,12 @@ function normalizeSpreadsheets(input, fallback) {
 
     return {
         enabled: cleanBoolean(raw.enabled, base.enabled === true),
-        sessionWindowMinutes: cleanNumber(raw.sessionWindowMinutes, base.sessionWindowMinutes || 5, 1, 30),
+        sessionWindowMinutes: cleanNumber(raw.sessionWindowMinutes, base.sessionWindowMinutes || 1, 1, 30),
         outputFormat: ["xlsx", "fods"].includes(outputFormat) ? outputFormat : "xlsx",
         libreOfficePath: cleanOptionalText(raw.libreOfficePath, process.env.LIBREOFFICE_PATH || base.libreOfficePath || "", 500),
         geminiModel: cleanName(raw.geminiModel, process.env.GEMINI_FLASH_MODEL || process.env.GEMINI_MODEL || base.geminiModel || "gemini-2.5-flash", 80),
+        geminiTimeoutMs: cleanNumber(raw.geminiTimeoutMs, Number(process.env.GEMINI_TIMEOUT_MS || base.geminiTimeoutMs || 300000), 30000, 900000),
+        geminiMaxRetries: cleanNumber(raw.geminiMaxRetries, Number(process.env.GEMINI_MAX_RETRIES || base.geminiMaxRetries || 4), 0, 10),
         rawDataRetentionDays: cleanNumber(raw.rawDataRetentionDays, base.rawDataRetentionDays || 31, 1, 370),
         teams: (Array.isArray(rawTeams) ? rawTeams : [])
             .slice(0, 30)
@@ -516,6 +520,9 @@ function normalizeDashboardConfig(input, options = {}) {
     const raw = input && typeof input === "object" ? input : {};
     const defaults = clone(DEFAULT_CONFIG);
     const fallbackRoles = Array.isArray(raw.reactionRoles) ? raw.reactionRoles : defaults.reactionRoles;
+    const spreadsheetsInput = Number(raw.version || 0) < 7 && raw.spreadsheets?.sessionWindowMinutes === 5
+        ? { ...raw.spreadsheets, sessionWindowMinutes: 1 }
+        : raw.spreadsheets;
 
     return {
         version: CONFIG_VERSION,
@@ -526,7 +533,7 @@ function normalizeDashboardConfig(input, options = {}) {
         leave: normalizeMessageSection(raw.leave, defaults.leave),
         recruitment: normalizeRecruitment(raw.recruitment, defaults.recruitment),
         memberCounts: normalizeMemberCounts(raw.memberCounts, defaults.memberCounts),
-        spreadsheets: normalizeSpreadsheets(raw.spreadsheets, defaults.spreadsheets),
+        spreadsheets: normalizeSpreadsheets(spreadsheetsInput, defaults.spreadsheets),
         youtube: normalizeYoutube(raw.youtube, defaults.youtube),
         reactionRoles: fallbackRoles.slice(0, 25).map((group, index) => normalizeReactionGroup(group, defaults.reactionRoles[index], index))
     };

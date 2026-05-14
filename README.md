@@ -55,6 +55,8 @@ Optional Gemini and XLSX environment:
 ```env
 GEMINI_FLASH_MODEL=gemini-2.5-flash
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
+GEMINI_TIMEOUT_MS=300000
+GEMINI_MAX_RETRIES=4
 LIBREOFFICE_PATH=soffice
 ```
 
@@ -154,6 +156,7 @@ Optional upload environment:
 ```env
 DASHBOARD_UPLOAD_CHANNEL_ID=discord_channel_for_tutorial_uploads
 DASHBOARD_UPLOAD_LIMIT=100mb
+DASHBOARD_ROLE_RECHECK_GRACE_MINUTES=30
 DATABASE_SSL=true
 ```
 
@@ -251,9 +254,11 @@ Dashboard Spreadsheet team settings:
 
 Global Spreadsheet settings:
 
-- Grouping window - minutes to group screenshots from the same user.
+- Grouping window - minutes to group screenshots from the same user, default 1.
 - Output format - `xlsx` or `fods`.
 - Gemini Flash model - defaults to `gemini-2.5-flash`.
+- Gemini timeout ms - defaults to `300000`.
+- Gemini retries - defaults to `4`.
 - Raw data retention days - how long raw Gemini text/JSON stays in state before cleanup.
 - LibreOffice path - leave blank for direct `exceljs` XLSX writing.
 
