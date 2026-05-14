@@ -24,12 +24,16 @@ module.exports = {
             .setColor("#00b0f4")
             .addFields(
                 {
-                    name: "Spreadsheets",
-                    value: "`/spreadsheets generate`, `/spreadsheets summary`, `/spreadsheets weekly`, `/spreadsheets monthly`, `/spreadsheets correct`, `/spreadsheets rebuild`, `/spreadsheets file`"
+                    name: "Team Event Spreadsheets",
+                    value: "Post screenshots in the configured channel. The bot groups images by user/channel and window, uses Gemini Flash to extract event names, ranks, players, scores, teams, podium data, and posts only the final XLSX plus a generated spreadsheet preview image for normal events."
                 },
                 {
-                    name: "Auto Reports",
-                    value: "Processed team events post rebuilt weekly and monthly XLSX reports to the configured output channel. Missing event scores become `0`; `#KAB` means ranked above every opponent."
+                    name: "#KAB, Reports, Corrections",
+                    value: "`#KAB` means the player ranked above every opponent. Missing known own-team players score `0`. Weekly reports post when event names change; monthly reports post after month end. Use `/spreadsheets correct-*`, `rebuild`, `regenerate-weekly`, and `regenerate-monthly` for fixes."
+                },
+                {
+                    name: "Temporary Spreadsheet Tests",
+                    value: "`/spreadsheets test-gemini`, `test-grouping`, `preview`, `rebuild-event`, `force-weekly`, `force-monthly` are temporary development commands."
                 },
                 {
                     name: "Recruitment",

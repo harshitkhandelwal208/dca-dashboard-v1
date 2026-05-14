@@ -1,10 +1,15 @@
 const { readState, writeState } = require("./stateStore");
 
 const SPREADSHEET_SCOPE = "spreadsheetSessions";
+const REPORT_EMISSION_SCOPE = "spreadsheetReportEmissions";
 const MAX_SESSIONS = 500;
 
 function emptyState() {
     return { sessions: [] };
+}
+
+function emptyReportEmissionState() {
+    return { reports: [] };
 }
 
 function clone(value) {
@@ -79,10 +84,96 @@ async function latestSpreadsheetSession(teamId, statuses = []) {
     return sessions.find(session => !allowed.size || allowed.has(session.status)) || null;
 }
 
+async function cleanupSpreadsheetRawData(options = {}) {
+    const retentionDays = Math.max(1, Number(options.retentionDays || 31));
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const state = await readSessions();
+    let cleaned = 0;
+
+    for (const session of state.sessions) {
+        if (session.status !== "processed") continue;
+        const date = Date.parse(session.processedAt || session.updatedAt || session.createdAt || 0);
+        if (!date || date > cutoff) continue;
+
+        const hasRaw = Boolean(
+            session.rawOcrText ||
+            session.rawGeminiText ||
+            session.rawGeminiJson ||
+            (Array.isArray(session.ocrResults) && session.ocrResults.length)
+        );
+        if (!hasRaw) continue;
+
+        session.ocrResults = [];
+        session.rawOcrText = "";
+        session.rawGeminiText = "";
+        session.rawGeminiJson = null;
+        session.rawDataCleanedAt = new Date().toISOString();
+        cleaned += 1;
+    }
+
+    if (cleaned) await writeSessions(state);
+    return cleaned;
+}
+
+async function readReportEmissions() {
+    const raw = await readState(REPORT_EMISSION_SCOPE, emptyReportEmissionState());
+    if (!raw || typeof raw !== "object" || !Array.isArray(raw.reports)) return emptyReportEmissionState();
+    return {
+        reports: raw.reports.filter(report => report && typeof report === "object")
+    };
+}
+
+async function writeReportEmissions(state) {
+    const next = {
+        reports: (state.reports || [])
+            .filter(report => report && report.teamId && report.period && report.periodKey)
+            .sort((a, b) => Date.parse(b.emittedAt || 0) - Date.parse(a.emittedAt || 0))
+            .slice(0, 500)
+    };
+    await writeState(REPORT_EMISSION_SCOPE, next);
+    return next;
+}
+
+async function getReportEmission(teamId, period, periodKey) {
+    const state = await readReportEmissions();
+    return clone(state.reports.find(report =>
+        report.teamId === teamId &&
+        report.period === period &&
+        report.periodKey === periodKey
+    ) || null);
+}
+
+async function markReportEmitted(report, details = {}) {
+    const state = await readReportEmissions();
+    const next = {
+        teamId: report.teamId,
+        period: report.period,
+        periodKey: report.periodKey,
+        emittedAt: new Date().toISOString(),
+        filePath: report.filePath || "",
+        eventCount: report.events?.length || 0,
+        reason: details.reason || "",
+        channelId: details.channelId || "",
+        messageId: details.messageId || ""
+    };
+    const index = state.reports.findIndex(item =>
+        item.teamId === next.teamId &&
+        item.period === next.period &&
+        item.periodKey === next.periodKey
+    );
+    if (index === -1) state.reports.unshift(next);
+    else state.reports[index] = { ...state.reports[index], ...next };
+    await writeReportEmissions(state);
+    return clone(next);
+}
+
 module.exports = {
+    cleanupSpreadsheetRawData,
+    getReportEmission,
     getSpreadsheetSession,
     latestSpreadsheetSession,
     listSpreadsheetSessions,
+    markReportEmitted,
     saveSpreadsheetSession,
     sessionId,
     updateSpreadsheetSession

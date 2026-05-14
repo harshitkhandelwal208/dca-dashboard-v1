@@ -2,7 +2,7 @@
 
 DCA Bot Suite contains two deployable applications that share one Discord bot token and one state store:
 
-- `bot/` - the Discord bot runtime, slash commands, recruitment tickets, reaction roles, team counts, YouTube checks, OCR spreadsheet generation, and automatic team-event reports.
+- `bot/` - the Discord bot runtime, slash commands, recruitment tickets, reaction roles, team counts, YouTube checks, Gemini spreadsheet generation, and automatic team-event reports.
 - `dashboard/` - the React and Express dashboard used to configure servers, channels, roles, tickets, member counts, feeds, spreadsheets, and bot logging.
 
 Both apps can use the same Postgres database through `DATABASE_URL`. If no database URL is provided, local JSON files in `bot/data/` are used for development.
@@ -36,23 +36,29 @@ Both apps can use the same Postgres database through `DATABASE_URL`. If no datab
 - A bot token with the needed gateway intents enabled.
 - A shared Postgres database for production, recommended for Render and Vercel.
 
-The spreadsheet system does not require native OCR or office binaries by default. It uses:
+The team-event spreadsheet system uses:
 
-- `tesseract.js` for OCR.
-- `sharp` for screenshot normalization.
+- Google Gemini Flash for image text extraction and structured parsing.
+- `sharp` for screenshot normalization before sending images to Gemini.
 - `exceljs` for XLSX files.
 
-Leave the dashboard fields `Tesseract path`, `ImageMagick path`, and `LibreOffice path` blank unless you specifically want to use installed native binaries.
+Gemini uses the REST `generateContent` API with inline image data. The implementation follows Google's official Gemini API shape for `inline_data` multimodal requests: https://ai.google.dev/api
 
-Optional native overrides:
+Required Gemini environment:
 
 ```env
-TESSERACT_PATH=tesseract
-IMAGEMAGICK_PATH=magick
+GEMINI_API_KEY=your_google_ai_studio_key
+```
+
+Optional Gemini and XLSX environment:
+
+```env
+GEMINI_FLASH_MODEL=gemini-2.5-flash
+GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
 LIBREOFFICE_PATH=soffice
 ```
 
-ImageMagick is only used for image preprocessing when configured. LibreOffice is only a fallback because XLSX files are written directly by Node.
+LibreOffice is only a fallback because XLSX files are written directly by Node.
 
 ## Root Scripts
 
@@ -86,6 +92,7 @@ Required bot environment:
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
 DATABASE_URL=postgres_connection_string_shared_with_dashboard
+GEMINI_API_KEY=your_google_ai_studio_key
 ```
 
 Recommended bot environment:
@@ -203,7 +210,7 @@ Main commands:
 /ban
 ```
 
-Ticket close outcomes are configured in the dashboard. Accepted recruits can trigger member-count updates and delayed role assignment in the recruitment and community servers.
+Ticket close outcomes are configured in the dashboard. Accepted recruits can trigger member-count updates and delayed role assignment in the recruitment and community servers. Closing a ticket sends a recruitment log embed built from Gemini Flash extraction, including the Discord user ID, previous team, team joined, garage power, named team-event scores, and the driver's license screenshot.
 
 ## Team Counts And Roles
 
@@ -216,7 +223,7 @@ Member count teams are configured in the dashboard Members page. Each team can h
 - Recruitment server role assignment.
 - Community server role assignment after rules are accepted.
 - Auto-assignment delay.
-- Aliases for matching OCR and recruitment data.
+- Aliases for matching Gemini extraction and recruitment data.
 
 Useful commands:
 
@@ -227,9 +234,11 @@ Useful commands:
 /updatecount
 ```
 
-## Spreadsheet OCR
+## Team Event Spreadsheet System
 
-The spreadsheet system watches configured team channels for image attachments. When screenshots are posted, the bot groups images into a pending session for the configured grouping window. If auto-processing is enabled, the session is processed after the window closes.
+The spreadsheet system watches configured team channels for image attachments. When screenshots are posted, the bot groups images into a pending team-event session for the configured grouping window. A session can contain one image, multiple images in one message, or multiple messages from the same user/channel during the window.
+
+After the window closes, Gemini Flash receives all images in the session together. The prompt asks Gemini to extract the visible event name, player rows, ranks, event points, total scores, team labels, own-team versus opponent classification, podium/summary data, and raw visible text. The parser then normalizes that JSON, applies staff corrections, calculates statistics, generates the final XLSX plus a spreadsheet preview image, and posts only those generated event outputs.
 
 Dashboard Spreadsheet team settings:
 
@@ -237,60 +246,91 @@ Dashboard Spreadsheet team settings:
 - Monitored channel - screenshot input channel, from either server.
 - Output channel - where generated files and reports are posted, from either server.
 - Team access role - role allowed to use spreadsheet commands, from either server.
-- Own team aliases - names used to identify own-team rows in OCR output.
+- Own team aliases - names used to identify own-team rows in Gemini output.
 - Auto process - automatically process sessions after the grouping window.
 
 Global Spreadsheet settings:
 
 - Grouping window - minutes to group screenshots from the same user.
 - Output format - `xlsx` or `fods`.
-- Keep source images - keeps downloaded screenshots in `bot/data/spreadsheets/`.
-- Tesseract path - leave blank for `tesseract.js`.
-- ImageMagick path - leave blank for `sharp`.
+- Gemini Flash model - defaults to `gemini-2.5-flash`.
+- Raw data retention days - how long raw Gemini text/JSON stays in state before cleanup.
 - LibreOffice path - leave blank for direct `exceljs` XLSX writing.
-- OCR language and PSM modes - passed to OCR.
+
+The Gemini API key is configured by environment variable, not in the dashboard:
+
+```env
+GEMINI_API_KEY=your_google_ai_studio_key
+```
+
+Screenshot submission rules:
+
+- Use uncropped screenshots when possible.
+- Send all screenshots for one event close together in the monitored channel.
+- Multiple images in one Discord message are treated as one submission.
+- Multiple messages from the same user in the same channel are appended while the grouping window is open.
+- Podium, summary, standings, and cropped list screenshots can be mixed in one session.
+- Do not submit screenshots from two different events in the same grouping window unless you want them parsed as one session.
 
 ## Spreadsheet Commands
 
 ```text
 /spreadsheets status team:<team>
 /spreadsheets sessions team:<team>
-/spreadsheets generate team:<team> [session_id] [rerun_ocr]
+/spreadsheets generate team:<team> [session_id] [rerun_gemini]
 /spreadsheets summary team:<team> [session_id]
 /spreadsheets weekly team:<team> [anchor_date]
 /spreadsheets monthly team:<team> [anchor_date]
 /spreadsheets correct team:<team> session_id:<id> row:<rank> field:<field> value:<value>
+/spreadsheets correct-name team:<team> session_id:<id> row:<rank> value:<name>
+/spreadsheets correct-team team:<team> session_id:<id> row:<rank> team_type:<own|opponent> [value:<label>]
+/spreadsheets correct-placement team:<team> session_id:<id> row:<rank> placement:<rank>
+/spreadsheets correct-points team:<team> session_id:<id> row:<rank> field:<points|score> value:<number>
+/spreadsheets correct-event-name team:<team> session_id:<id> value:<event>
 /spreadsheets rebuild team:<team> session_id:<id>
+/spreadsheets regenerate-weekly team:<team> [anchor_date]
+/spreadsheets regenerate-monthly team:<team> [anchor_date]
 /spreadsheets file team:<team> [session_id]
 /spreadsheets chart team:<team> [session_id]
 ```
 
 `anchor_date` uses `YYYY-MM-DD`. If omitted, weekly and monthly reports use the date of the latest processed session.
 
+Temporary development commands:
+
+```text
+/spreadsheets test-gemini team:<team> [session_id]
+/spreadsheets test-grouping team:<team>
+/spreadsheets preview team:<team> [session_id]
+/spreadsheets rebuild-event team:<team> session_id:<id>
+/spreadsheets force-weekly team:<team> [anchor_date]
+/spreadsheets force-monthly team:<team> [anchor_date]
+```
+
+These are clearly marked `TEMP` in Discord and can be removed after production confidence is high.
+
 ## Automatic Weekly And Monthly Reports
 
-Every processed team-event session now rebuilds two aggregate reports for the team:
+Normal event output posts only:
 
-- Weekly report.
-- Monthly report.
+- The final event XLSX.
+- A generated image preview of the spreadsheet data.
 
-If the team has an output channel, the bot posts:
+No normal-event embeds are posted to the output channel. The event XLSX contains summary, ranking, attendance, chart, and raw Gemini sheets.
 
-- The processed event summary.
-- The event XLSX file.
-- The event chart.
-- The rebuilt weekly XLSX report.
-- The rebuilt monthly XLSX report.
+Weekly reports are generated when the parsed team event name changes from the previous processed event for that team. The weekly report includes the event names covered that week, player totals, attendance, missed events, #KAB totals, and zero-score events.
+
+Monthly reports are generated automatically after month end by the bot scheduler. The scheduler checks during the first three UTC days of the new month and posts the previous calendar month's report once per team/output channel. Staff can force a monthly report with `/spreadsheets regenerate-monthly` or `/spreadsheets force-monthly`.
 
 Report rules:
 
 - Every processed session in the period is treated as one team event.
-- Event columns use the OCR-detected team event name from the screenshot when available.
+- Event columns use the Gemini-detected team event name from the screenshot when available.
 - Missing players receive a score of `0` for that event.
 - The period max score is the sum of each event's max score.
 - `%kill` is `total / max`.
 - `#KAB` is the number of events where the player ranked above every opponent.
-- If no opponent rows were detected for an event, event max score is used as a fallback for `#KAB`.
+- If no opponent rows were detected for an event, `#KAB` is `0` because opponent order cannot be proven.
 - Weekly reports include the team event names in both the spreadsheet columns and the Details sheet.
 - Monthly reports use the same scoring rules over the calendar month.
 
@@ -299,15 +339,20 @@ The generated workbooks contain:
 - `Report` sheet with rank, name, event scores, `%kill`, total, max, `#KAB`, missed events, and attended events.
 - `Details` sheet with period metadata, report rules, event names, dates, session IDs, max scores, and players parsed.
 
-## OCR Correction Workflow
+## Gemini Correction Workflow
 
-If OCR reads a player name, rank, points, score, or team type incorrectly:
+If Gemini reads a player name, team, rank, points, score, or event name incorrectly:
 
 ```text
 /spreadsheets correct team:<team> session_id:<id> row:<rank> field:<field> value:<value>
+/spreadsheets correct-name team:<team> session_id:<id> row:<rank> value:<name>
+/spreadsheets correct-team team:<team> session_id:<id> row:<rank> team_type:<own|opponent> [value:<label>]
+/spreadsheets correct-placement team:<team> session_id:<id> row:<rank> placement:<rank>
+/spreadsheets correct-points team:<team> session_id:<id> row:<rank> field:<points|score> value:<number>
+/spreadsheets correct-event-name team:<team> session_id:<id> value:<event>
 ```
 
-Corrections are saved on the session and outputs are rebuilt. Weekly and monthly reports will reflect corrected session data the next time they are generated or when another event is processed.
+Corrections are saved as an override layer on the session. Rebuilds always replay Gemini extraction plus staff corrections, so the original raw extraction remains auditable until retention cleanup. Weekly and monthly reports reflect corrected session data the next time they are generated, regenerated, or when another event triggers a report.
 
 ## Help Commands
 
@@ -331,7 +376,7 @@ The help output covers recruitment, spreadsheets, weekly/monthly reports, member
 - Tickets - active tickets, logs, transcripts, tutorials, and ticket settings.
 - Reaction Roles - dashboard-managed reaction role panels.
 - YouTube - RSS feed checks and announcement channels.
-- Spreadsheets - OCR settings, team channels, output channels, roles, and report setup.
+- Spreadsheets - Gemini settings, team channels, output channels, roles, and report setup.
 - Members - member count and role assignment settings.
 - Logs - combined bot and recruitment logs.
 - Server - community and recruitment server IDs, dashboard role, recruiter role, manager role, command log channel, and dashboard URL.
@@ -361,11 +406,9 @@ Generated spreadsheet outputs are written under:
 bot/data/spreadsheets/
 ```
 
-Tesseract language cache is written under:
+Raw Gemini text/JSON is stored with the spreadsheet session for short-term auditing and is cleaned after the configured retention period, default 31 days. Generated XLSX files and spreadsheet preview images are not deleted by this cleanup.
 
-```text
-bot/data/tesseract-cache/
-```
+Local normalized screenshot downloads are temporary processing inputs and are cleaned after spreadsheet processing/output.
 
 ## Deployment Notes
 
@@ -404,13 +447,14 @@ cd bot
 npm run deploy:commands
 ```
 
-If OCR returns poor results:
+If Gemini extraction returns poor results:
 
 - Use uncropped, high-resolution screenshots.
 - Increase grouping window if screenshots arrive slowly.
 - Add own team aliases in the dashboard.
-- Use `/spreadsheets correct` for field-level fixes.
-- Try PSM modes `6,11` first.
+- Use `/spreadsheets preview` or `/spreadsheets test-gemini` to inspect parsed rows.
+- Use `/spreadsheets correct-*` commands for field-level fixes.
+- Rebuild with `/spreadsheets rebuild` after corrections.
 
 If weekly or monthly reports are empty:
 

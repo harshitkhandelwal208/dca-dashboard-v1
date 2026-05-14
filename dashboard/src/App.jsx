@@ -733,17 +733,14 @@ export default function App() {
             sessionWindowMinutes: 5,
             outputFormat: "xlsx",
             libreOfficePath: "",
-            tesseractPath: "",
-            imageMagickPath: "",
-            tesseractLang: "eng",
-            tesseractPsm: "6,11",
-            keepSourceImages: false,
+            geminiModel: "gemini-2.5-flash",
+            rawDataRetentionDays: 31,
             teams: []
         };
 
         return (
             <div className="stack">
-                <SectionCard title="Spreadsheet OCR Settings" icon={FileSpreadsheet}>
+                <SectionCard title="Spreadsheet Gemini Settings" icon={FileSpreadsheet}>
                     <div className="form-grid compact">
                         <Toggle label="Enabled" checked={Boolean(spreadsheets.enabled)} onChange={value => patch("spreadsheets.enabled", value)} />
                         <Field label="Grouping window">
@@ -751,16 +748,13 @@ export default function App() {
                         </Field>
                         <Field label="Output format">
                             <select className="input" value={spreadsheets.outputFormat || "xlsx"} onChange={event => patch("spreadsheets.outputFormat", event.target.value)}>
-                                <option value="xlsx">XLSX via LibreOffice</option>
+                                <option value="xlsx">XLSX</option>
                                 <option value="fods">Flat ODS</option>
                             </select>
                         </Field>
-                        <Toggle label="Keep source images" checked={Boolean(spreadsheets.keepSourceImages)} onChange={value => patch("spreadsheets.keepSourceImages", value)} />
                         <Field label="LibreOffice path"><TextInput placeholder="Leave blank; Node writes XLSX" value={spreadsheets.libreOfficePath || ""} onChange={event => patch("spreadsheets.libreOfficePath", event.target.value)} /></Field>
-                        <Field label="Tesseract path"><TextInput placeholder="Leave blank; uses tesseract.js" value={spreadsheets.tesseractPath || ""} onChange={event => patch("spreadsheets.tesseractPath", event.target.value)} /></Field>
-                        <Field label="ImageMagick path"><TextInput placeholder="Leave blank; uses sharp" value={spreadsheets.imageMagickPath || ""} onChange={event => patch("spreadsheets.imageMagickPath", event.target.value)} /></Field>
-                        <Field label="OCR language"><TextInput value={spreadsheets.tesseractLang || "eng"} onChange={event => patch("spreadsheets.tesseractLang", event.target.value)} /></Field>
-                        <Field label="OCR PSM modes"><TextInput value={spreadsheets.tesseractPsm || "6,11"} onChange={event => patch("spreadsheets.tesseractPsm", event.target.value)} /></Field>
+                        <Field label="Gemini Flash model"><TextInput value={spreadsheets.geminiModel || "gemini-2.5-flash"} onChange={event => patch("spreadsheets.geminiModel", event.target.value)} /></Field>
+                        <Field label="Raw data retention days"><TimeInput min="1" max="370" value={spreadsheets.rawDataRetentionDays || 31} onChange={event => patch("spreadsheets.rawDataRetentionDays", Number(event.target.value))} /></Field>
                     </div>
                 </SectionCard>
 

@@ -56,15 +56,11 @@ function sessionKabMap(session) {
         .map(player => Number(player.rank))
         .filter(rank => Number.isFinite(rank));
     const topOpponentRank = opponentRanks.length ? Math.min(...opponentRanks) : null;
-    const maxScore = Math.max(0, ...players.map(player => Number(player.points ?? player.score ?? 0) || 0));
     const map = new Map();
 
     for (const player of own) {
         const rank = Number(player.rank);
-        const score = Number(player.points ?? player.score ?? 0) || 0;
-        const kab = topOpponentRank !== null
-            ? Number.isFinite(rank) && rank < topOpponentRank
-            : score >= maxScore && maxScore > 0;
+        const kab = topOpponentRank !== null && Number.isFinite(rank) && rank < topOpponentRank;
         map.set(player.playerName, kab ? 1 : 0);
     }
 
@@ -92,7 +88,7 @@ function summaryRows(session) {
         row(["Own score", stats.ownScore || 0]),
         row(["Opponent score", stats.opponentScore || 0]),
         row(["#KAB this event", [...kabMap.values()].reduce((total, value) => total + value, 0)]),
-        row(["#KAB definition", "Player ranked above every opponent in this event."])
+        row(["#KAB definition", "Player ranked above every opponent in this event. If no opponent rows were detected, #KAB is 0 because opponent order cannot be proven."])
     ];
 
     if (teamScores.rawLine) {
@@ -126,8 +122,10 @@ function resultRows(session) {
         "Score",
         "Opponents Below",
         "#KAB",
+        "Classification",
+        "Confidence",
         "Source",
-        "Raw OCR Line"
+        "Raw Gemini Text"
     ];
     const stats = session.stats || {};
     const belowMap = new Map((stats.opponentsBelowByPlayer || []).map(item => [item.playerName, item.opponentsBelow]));
@@ -146,6 +144,8 @@ function resultRows(session) {
                 cell(player.score ?? "", style),
                 cell(belowMap.get(player.playerName) ?? "", style),
                 cell(kabMap.get(player.playerName) || 0, style),
+                cell(player.classificationSource || "", style),
+                cell(player.confidence ?? "", style),
                 cell(player.sourceImage || "", style),
                 cell(player.rawLine || "", style)
             ].join("")
@@ -178,7 +178,7 @@ function chartRows(session) {
 
 function rawRows(session) {
     return [
-        row(["Image", "OCR Text"], "HeaderCell"),
+        row(["Image", "Gemini visible text / structured response"], "HeaderCell"),
         ...(session.ocrResults || []).map((result, index) =>
             row([`Image ${index + 1}`, result.text || ""])
         )
@@ -206,7 +206,7 @@ function summaryWorkbookRows(session) {
         { values: ["Own score", stats.ownScore || 0] },
         { values: ["Opponent score", stats.opponentScore || 0] },
         { values: ["#KAB this event", [...kabMap.values()].reduce((total, value) => total + value, 0)] },
-        { values: ["#KAB definition", "Player ranked above every opponent in this event."] }
+        { values: ["#KAB definition", "Player ranked above every opponent in this event. If no opponent rows were detected, #KAB is 0 because opponent order cannot be proven."] }
     ];
 
     if (teamScores.rawLine) {
@@ -240,8 +240,10 @@ function resultWorkbookRows(session) {
         "Score",
         "Opponents Below",
         "#KAB",
+        "Classification",
+        "Confidence",
         "Source",
-        "Raw OCR Line"
+        "Raw Gemini Text"
     ];
     const stats = session.stats || {};
     const belowMap = new Map((stats.opponentsBelowByPlayer || []).map(item => [item.playerName, item.opponentsBelow]));
@@ -259,6 +261,8 @@ function resultWorkbookRows(session) {
                 player.score ?? "",
                 belowMap.get(player.playerName) ?? "",
                 kabMap.get(player.playerName) || 0,
+                player.classificationSource || "",
+                player.confidence ?? "",
                 player.sourceImage || "",
                 player.rawLine || ""
             ],
@@ -292,9 +296,33 @@ function chartWorkbookRows(session) {
 
 function rawWorkbookRows(session) {
     return [
-        { values: ["Image", "OCR Text"], header: true },
+        { values: ["Image", "Gemini visible text / structured response"], header: true },
         ...(session.ocrResults || []).map((result, index) => ({
             values: [`Image ${index + 1}`, result.text || ""]
+        }))
+    ];
+}
+
+function attendanceWorkbookRows(session) {
+    const currentOwn = new Set((session.players || [])
+        .filter(player => player.teamType === "own")
+        .map(player => String(player.playerName || "").toLowerCase()));
+    const missing = (session.attendance?.missingPlayers || []).filter(Boolean);
+    const attended = (session.players || []).filter(player => player.teamType === "own");
+
+    return [
+        { values: ["Player", "Status", "Event Score", "Rank"], header: true },
+        ...attended.map(player => ({
+            values: [
+                player.playerName,
+                currentOwn.has(String(player.playerName || "").toLowerCase()) ? "attended" : "unknown",
+                Number(player.points ?? player.score ?? 0) || 0,
+                player.rank ?? ""
+            ]
+        })),
+        ...missing.map(name => ({
+            values: [name, "missed", 0, ""],
+            fill: "#fee2e2"
         }))
     ];
 }
@@ -313,8 +341,9 @@ function buildFods(session) {
 <office:spreadsheet>
 ${table("Summary", summaryRows(session))}
 ${table("Results", resultRows(session))}
+${table("Attendance", attendanceWorkbookRows(session).map(item => row(item.values, item.header ? "HeaderCell" : "Cell")).join("\n"))}
 ${table("Charts", chartRows(session))}
-${table("Raw OCR", rawRows(session))}
+${table("Raw Gemini", rawRows(session))}
 </office:spreadsheet>
 </office:body>
 </office:document>`;
@@ -348,8 +377,97 @@ function buildSvgChart(session) {
 <rect width="100%" height="100%" fill="#ffffff"/>
 <text x="24" y="32" font-family="Arial" font-size="24" font-weight="700" fill="#111827">${escapeXml(session.metadata?.title || "Race Summary")}</text>
 ${bars}
-<text x="24" y="330" font-family="Arial" font-size="16" fill="#6b7280">Yellow = own team, blue = opponents. Generated from OCR and corrections.</text>
+<text x="24" y="330" font-family="Arial" font-size="16" fill="#6b7280">Yellow = own team, blue = opponents. Generated from Gemini Flash extraction and corrections.</text>
 </svg>`;
+}
+
+function previewTextValue(value, maxLength = 28) {
+    const text = String(value ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function buildSpreadsheetPreviewSvg(session) {
+    const metadata = session.metadata || {};
+    const stats = session.stats || {};
+    const kabMap = sessionKabMap(session);
+    const columns = [
+        { label: "Rank", width: 70, value: player => player.rank ?? "" },
+        { label: "Player", width: 230, value: player => player.playerName || "" },
+        { label: "Team", width: 190, value: player => player.teamLabel || "" },
+        { label: "Event Pts", width: 120, value: player => player.points ?? "" },
+        { label: "Score", width: 125, value: player => player.score ?? "" },
+        { label: "#KAB", width: 80, value: player => kabMap.get(player.playerName) || 0 }
+    ];
+    const players = (session.players || []).slice(0, 18);
+    const rowHeight = 38;
+    const margin = 28;
+    const titleHeight = 132;
+    const tableWidth = columns.reduce((total, column) => total + column.width, 0);
+    const width = tableWidth + margin * 2;
+    const height = titleHeight + rowHeight * (players.length + 2) + 76;
+    const eventName = metadata.title || metadata.eventName || "Team Event Spreadsheet";
+    const teamName = metadata.ownTeamName || session.teamName || session.teamId || "Team";
+    const generated = new Date(session.processedAt || session.updatedAt || Date.now()).toLocaleString("en-US", {
+        timeZone: "UTC",
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+
+    let x = margin;
+    const headerCells = columns.map(column => {
+        const cell = `<rect x="${x}" y="${titleHeight}" width="${column.width}" height="${rowHeight}" fill="${HEADER_COLOR}" stroke="#111827"/>
+<text x="${x + 10}" y="${titleHeight + 25}" font-family="Arial" font-size="15" font-weight="700" fill="#ffffff">${escapeXml(column.label)}</text>`;
+        x += column.width;
+        return cell;
+    }).join("\n");
+
+    const bodyRows = (players.length ? players : [{ playerName: "No parsed rows", teamType: "opponent" }]).map((player, rowIndex) => {
+        const y = titleHeight + rowHeight * (rowIndex + 1);
+        const fill = player.teamType === "own" ? OWN_COLOR : rowIndex % 2 === 0 ? "#ffffff" : "#f8fafc";
+        let cellX = margin;
+        const cells = columns.map(column => {
+            const text = previewTextValue(column.value(player));
+            const cell = `<rect x="${cellX}" y="${y}" width="${column.width}" height="${rowHeight}" fill="${fill}" stroke="#d1d5db"/>
+<text x="${cellX + 10}" y="${y + 24}" font-family="Arial" font-size="14" fill="#111827">${escapeXml(text)}</text>`;
+            cellX += column.width;
+            return cell;
+        }).join("\n");
+        return cells;
+    }).join("\n");
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<rect x="0" y="0" width="${width}" height="104" fill="#0f766e"/>
+<text x="${margin}" y="38" font-family="Arial" font-size="24" font-weight="700" fill="#ffffff">${escapeXml(previewTextValue(eventName, 54))}</text>
+<text x="${margin}" y="68" font-family="Arial" font-size="15" fill="#d1fae5">${escapeXml(teamName)} - ${stats.totalPlayers || 0} parsed player(s) - Generated ${escapeXml(generated)} UTC</text>
+<text x="${margin}" y="94" font-family="Arial" font-size="14" fill="#d1fae5">Own points ${stats.ownPoints || 0} vs opponents ${stats.opponentPoints || 0}; own score ${stats.ownScore || 0} vs opponents ${stats.opponentScore || 0}</text>
+${headerCells}
+${bodyRows}
+<text x="${margin}" y="${height - 30}" font-family="Arial" font-size="13" fill="#64748b">Preview image generated from the final spreadsheet data. The XLSX attachment is the source of truth.</text>
+</svg>`;
+}
+
+async function generateSpreadsheetPreviewImage(session, outputDir, baseName) {
+    const svg = buildSpreadsheetPreviewSvg(session);
+    const imagePath = path.join(outputDir, `${baseName}-spreadsheet-preview.png`);
+
+    try {
+        const sharp = require("sharp");
+        await sharp(Buffer.from(svg)).png().toFile(imagePath);
+        if (fs.existsSync(imagePath)) return imagePath;
+    } catch {
+        // Fall back to an SVG attachment if image rasterization is unavailable.
+    }
+
+    const svgPath = path.join(outputDir, `${baseName}-spreadsheet-preview.svg`);
+    await fs.promises.writeFile(svgPath, svg, "utf8");
+    return svgPath;
 }
 
 async function convertWithLibreOffice(fodsPath, outputDir, settings = {}) {
@@ -426,8 +544,9 @@ async function generateXlsxWithExcelJs(session, outputDir, baseName) {
 
     addWorksheetRows(workbook.addWorksheet("Summary"), summaryWorkbookRows(session));
     addWorksheetRows(workbook.addWorksheet("Results"), resultWorkbookRows(session));
+    addWorksheetRows(workbook.addWorksheet("Attendance"), attendanceWorkbookRows(session));
     addWorksheetRows(workbook.addWorksheet("Charts"), chartWorkbookRows(session));
-    addWorksheetRows(workbook.addWorksheet("Raw OCR"), rawWorkbookRows(session));
+    addWorksheetRows(workbook.addWorksheet("Raw Gemini"), rawWorkbookRows(session));
 
     const xlsxPath = path.join(outputDir, `${baseName}.xlsx`);
     await workbook.xlsx.writeFile(xlsxPath);
@@ -445,6 +564,7 @@ async function generateSpreadsheetArtifacts(session, outputDir, settings = {}) {
 
     await fs.promises.writeFile(fodsPath, buildFods(session), "utf8");
     await fs.promises.writeFile(chartPath, buildSvgChart(session), "utf8");
+    const spreadsheetImagePath = await generateSpreadsheetPreviewImage(session, outputDir, baseName);
 
     let spreadsheetPath = fodsPath;
     let conversionError = "";
@@ -464,6 +584,7 @@ async function generateSpreadsheetArtifacts(session, outputDir, settings = {}) {
     return {
         fodsPath,
         spreadsheetPath,
+        spreadsheetImagePath,
         chartPath,
         conversionError,
         generatedAt: new Date().toISOString()

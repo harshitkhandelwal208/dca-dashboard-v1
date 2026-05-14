@@ -10,14 +10,16 @@ const { loadDashboardConfig } = require("./dashboardConfig");
 const { logAction } = require("./logStore");
 const { ocrImages, parseRaceScreenshots, summarizePlayers } = require("./raceOcr");
 const {
-    buildPeriodReportEmbed,
-    generateStandardPeriodReports,
+    generatePeriodReport,
     reportAttachment
 } = require("./spreadsheetReports");
 const {
+    cleanupSpreadsheetRawData,
+    getReportEmission,
     getSpreadsheetSession,
     latestSpreadsheetSession,
     listSpreadsheetSessions,
+    markReportEmitted,
     saveSpreadsheetSession,
     updateSpreadsheetSession
 } = require("./spreadsheetStore");
@@ -146,9 +148,17 @@ async function downloadImages(session, outputDir) {
 }
 
 function applyCorrections(parsed, corrections = []) {
+    const metadata = { ...(parsed.metadata || {}) };
     const players = (parsed.players || []).map(player => ({ ...player }));
 
     for (const correction of corrections) {
+        if (correction.field === "event_name") {
+            const value = String(correction.value || "").slice(0, 120);
+            metadata.title = value || metadata.title || "Team Event";
+            metadata.eventName = metadata.title;
+            continue;
+        }
+
         const row = Number(correction.row);
         const player = players.find(item => item.rank === row) || players[row - 1];
         if (!player) continue;
@@ -176,12 +186,14 @@ function applyCorrections(parsed, corrections = []) {
             player.teamType = own ? "own" : "opponent";
             player.teamColor = own ? "yellow" : "blue";
             if (!own) player.teamLabel = "Opponent";
+            player.classificationSource = "staff-correction";
         }
     }
 
     players.sort((a, b) => a.rank - b.rank || a.playerName.localeCompare(b.playerName));
     return {
         ...parsed,
+        metadata,
         players,
         stats: summarizePlayers(players)
     };
@@ -192,6 +204,69 @@ function parseScoreValue(value) {
     if (!text) return NaN;
     if (/^\d+[,.]\d+$/.test(text)) return Number.parseFloat(text.replace(",", "."));
     return Number.parseInt(text.replace(/\D/g, ""), 10);
+}
+
+function playerKey(name) {
+    return String(name || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+}
+
+function processedDate(session) {
+    const date = new Date(session.processedAt || session.updatedAt || session.createdAt || Date.now());
+    return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function eventNameForSession(session) {
+    return String(
+        session.metadata?.eventName ||
+        session.metadata?.title ||
+        session.teamEventName ||
+        session.eventName ||
+        "Team Event"
+    ).replace(/\s+/g, " ").trim();
+}
+
+async function attachAttendanceSnapshot(session) {
+    const sessions = await listSpreadsheetSessions({ teamId: session.teamId });
+    const roster = new Map();
+
+    for (const historical of sessions) {
+        if (historical.status !== "processed" || historical.id === session.id) continue;
+        for (const player of historical.players || []) {
+            if (player.teamType !== "own") continue;
+            const key = playerKey(player.playerName);
+            if (key && !roster.has(key)) roster.set(key, player.playerName);
+        }
+    }
+
+    for (const player of session.players || []) {
+        if (player.teamType !== "own") continue;
+        const key = playerKey(player.playerName);
+        if (key && !roster.has(key)) roster.set(key, player.playerName);
+    }
+
+    const currentOwn = new Set((session.players || [])
+        .filter(player => player.teamType === "own")
+        .map(player => playerKey(player.playerName))
+        .filter(Boolean));
+    const missingPlayers = [...roster.entries()]
+        .filter(([key]) => !currentOwn.has(key))
+        .map(([, name]) => name)
+        .sort((a, b) => a.localeCompare(b));
+
+    return {
+        ...session,
+        attendance: {
+            roster: [...roster.values()].sort((a, b) => a.localeCompare(b)),
+            attendedPlayers: (session.players || [])
+                .filter(player => player.teamType === "own")
+                .map(player => player.playerName),
+            missingPlayers,
+            zeroScorePolicy: "Players missing this event are recorded as 0 in event summaries and period rollups."
+        }
+    };
 }
 
 async function rebuildArtifacts(session, config, teamConfig) {
@@ -226,18 +301,14 @@ async function processSpreadsheetSession(client, sessionId, options = {}) {
     try {
         let parsed;
         let ocrResults = session.ocrResults || [];
+        let imagePaths = [];
         if (!ocrResults.length || options.rerunOcr) {
             const outputDir = outputBaseDir(session.teamId, session.id);
-            const imagePaths = await downloadImages(session, outputDir);
+            imagePaths = await downloadImages(session, outputDir);
             ocrResults = await ocrImages(imagePaths, {
-                tesseractPath: config.spreadsheets.tesseractPath,
-                imageMagickPath: config.spreadsheets.imageMagickPath,
-                tesseractLang: config.spreadsheets.tesseractLang,
-                tesseractPsm: config.spreadsheets.tesseractPsm
+                ...config.spreadsheets,
+                teamConfig
             });
-            if (!config.spreadsheets.keepSourceImages) {
-                await fs.promises.rm(path.join(outputDir, "source"), { recursive: true, force: true }).catch(() => null);
-            }
             parsed = parseRaceScreenshots(ocrResults, teamConfig);
         } else {
             parsed = parseRaceScreenshots(ocrResults, teamConfig);
@@ -250,11 +321,15 @@ async function processSpreadsheetSession(client, sessionId, options = {}) {
             processedAt: new Date().toISOString(),
             ocrResults,
             metadata: parsed.metadata,
+            teamEventName: parsed.metadata?.eventName || parsed.metadata?.title || "",
             players: parsed.players,
             stats: parsed.stats,
             rawOcrText: parsed.rawText,
+            rawGeminiText: ocrResults[0]?.rawGeminiText || "",
+            rawGeminiJson: ocrResults[0]?.structured || null,
             outputs: {}
         };
+        session = await attachAttendanceSnapshot(session);
         session.outputs = await rebuildArtifacts(session, config, teamConfig);
         const saved = await saveSpreadsheetSession(session);
 
@@ -274,6 +349,7 @@ async function processSpreadsheetSession(client, sessionId, options = {}) {
 
         return saved;
     } catch (error) {
+        await removeSourceImages(session).catch(() => null);
         await updateSpreadsheetSession(session.id, {
             status: "failed",
             error: error.message
@@ -303,10 +379,12 @@ async function rebuildSpreadsheetSession(client, sessionId) {
         ...session,
         ...parsed,
         status: "processed",
+        teamEventName: parsed.metadata?.eventName || parsed.metadata?.title || session.teamEventName || "",
         outputs: {}
     };
-    next.outputs = await rebuildArtifacts(next, config, teamConfig);
-    const saved = await saveSpreadsheetSession(next);
+    const withAttendance = await attachAttendanceSnapshot(next);
+    withAttendance.outputs = await rebuildArtifacts(withAttendance, config, teamConfig);
+    const saved = await saveSpreadsheetSession(withAttendance);
 
     await logAction(client, {
         type: "system",
@@ -384,12 +462,11 @@ function sessionKabPlayers(session) {
         .map(player => Number(player.rank))
         .filter(rank => Number.isFinite(rank));
     const topOpponentRank = opponentRanks.length ? Math.min(...opponentRanks) : null;
-    const maxScore = Math.max(0, ...players.map(player => Number(player.points ?? player.score ?? 0) || 0));
 
     return own.filter(player => {
         const rank = Number(player.rank);
         if (Number.isFinite(rank) && topOpponentRank !== null) return rank < topOpponentRank;
-        return (Number(player.points ?? player.score ?? 0) || 0) >= maxScore && maxScore > 0;
+        return false;
     });
 }
 
@@ -410,37 +487,216 @@ function attachmentFor(filePath, name = "") {
     return new AttachmentBuilder(filePath, { name: name || path.basename(filePath) });
 }
 
+function chunkFiles(files, size = 10) {
+    const chunks = [];
+    for (let index = 0; index < files.length; index += size) {
+        chunks.push(files.slice(index, index + size));
+    }
+    return chunks;
+}
+
+async function sendFileChunks(channel, content, files) {
+    const chunks = chunkFiles(files.filter(Boolean), 10);
+    if (!chunks.length) {
+        return [await channel.send({ content, allowedMentions: { parse: [] } })];
+    }
+
+    const messages = [];
+    for (let index = 0; index < chunks.length; index += 1) {
+        messages.push(await channel.send({
+            content: index === 0 ? content : `Additional generated files for the same event output.`,
+            files: chunks[index],
+            allowedMentions: { parse: [] }
+        }));
+    }
+    return messages;
+}
+
+async function removeSourceImages(session) {
+    const outputDir = outputBaseDir(session.teamId, session.id);
+    await fs.promises.rm(path.join(outputDir, "source"), { recursive: true, force: true }).catch(() => null);
+}
+
+async function sendPeriodReport(client, teamConfig, period, options = {}) {
+    const report = await generatePeriodReport(teamConfig, period, {
+        anchorDate: options.anchorDate || new Date()
+    });
+    if (!report) return { skipped: true, reason: "no-sessions" };
+
+    if (!options.force) {
+        const existing = await getReportEmission(teamConfig.id, period, report.periodKey);
+        if (existing) return { skipped: true, reason: "already-emitted", report };
+    }
+
+    const channelId = teamConfig.outputChannelId;
+    if (!channelId) return { skipped: true, reason: "missing-output-channel", report };
+
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel?.isTextBased?.()) return { skipped: true, reason: "output-channel-unavailable", report };
+
+    const attachment = reportAttachment(report);
+    const message = await channel.send({
+        content: `${period === "weekly" ? "Weekly" : "Monthly"} team-event report for **${teamConfig.name}** (${report.periodLabel}). Missed events are scored as 0.`,
+        files: attachment ? [attachment] : [],
+        allowedMentions: { parse: [] }
+    });
+    await markReportEmitted(report, {
+        reason: options.reason || "",
+        channelId,
+        messageId: message.id
+    });
+
+    return { report, message };
+}
+
+async function shouldEmitWeeklyForEventChange(teamConfig, session) {
+    const currentName = normalize(eventNameForSession(session));
+    if (!currentName) return false;
+
+    const sessions = (await listSpreadsheetSessions({ teamId: teamConfig.id }))
+        .filter(item => item.status === "processed" && item.id !== session.id)
+        .sort((a, b) => processedDate(b) - processedDate(a));
+    const previous = sessions.find(item => processedDate(item) <= processedDate(session)) || sessions[0];
+    if (!previous) return false;
+
+    return normalize(eventNameForSession(previous)) !== currentName;
+}
+
+async function postAutomaticReports(client, teamConfig, session) {
+    if (!teamConfig?.outputChannelId) return [];
+    const posted = [];
+
+    if (await shouldEmitWeeklyForEventChange(teamConfig, session)) {
+        const result = await sendPeriodReport(client, teamConfig, "weekly", {
+            anchorDate: processedDate(session),
+            force: true,
+            reason: `event-name-change:${eventNameForSession(session)}`
+        }).catch(error => {
+            console.error("Automatic weekly report failed:", error.message);
+            return null;
+        });
+        if (result?.message) posted.push(result);
+    }
+
+    return posted;
+}
+
 async function sendSessionOutput(client, session) {
     const config = await loadDashboardConfig();
     const teamConfig = findSpreadsheetTeam(config, session.teamId);
-    const channelId = teamConfig?.outputChannelId || session.channelId;
-    const channel = await client.channels.fetch(channelId).catch(() => null);
-    if (!channel?.isTextBased?.()) return null;
+    try {
+        const channelId = teamConfig?.outputChannelId || session.channelId;
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel?.isTextBased?.()) return null;
 
-    const reports = teamConfig
-        ? await generateStandardPeriodReports(teamConfig, session).catch(error => {
-            console.error("Spreadsheet period report generation failed:", error);
-            return [];
-        })
-        : [];
-    const files = teamConfig?.outputChannelId ? [
-        attachmentFor(session.outputs?.spreadsheetPath),
-        attachmentFor(session.outputs?.chartPath),
-        ...reports.map(reportAttachment)
-    ].filter(Boolean) : [];
-    const embeds = [
-        buildSummaryEmbed(session),
-        ...reports.map(buildPeriodReportEmbed)
-    ];
+        const spreadsheet = attachmentFor(session.outputs?.spreadsheetPath);
+        const previewImage = attachmentFor(session.outputs?.spreadsheetImagePath);
+        const files = [
+            spreadsheet,
+            previewImage
+        ].filter(Boolean);
+        const content = teamConfig?.outputChannelId
+            ? `Final team-event output for **${eventNameForSession(session)}** (\`${session.id}\`).`
+            : `Spreadsheet session \`${session.id}\` was processed. Configure an output channel to receive automatic final files and reports.`;
 
-    return channel.send({
-        content: teamConfig?.outputChannelId
-            ? `Processed spreadsheet session \`${session.id}\`. Weekly and monthly reports were rebuilt with missed events scored as 0.`
-            : `Spreadsheet session \`${session.id}\` was processed. Configure an output channel to receive automatic files and weekly/monthly reports.`,
-        embeds,
-        files,
-        allowedMentions: { parse: [] }
+        const messages = await sendFileChunks(channel, content, files);
+        if (teamConfig) {
+            await postAutomaticReports(client, teamConfig, session);
+        }
+
+        return messages[0] || null;
+    } finally {
+        await removeSourceImages(session);
+    }
+}
+
+async function previewSpreadsheetSession(sessionId, options = {}) {
+    const config = await loadDashboardConfig();
+    const session = await getSpreadsheetSession(sessionId);
+    if (!session) throw new Error("Spreadsheet session not found.");
+    const teamConfig = findSpreadsheetTeam(config, session.teamId);
+    if (!teamConfig) throw new Error("Spreadsheet team config was not found.");
+
+    let ocrResults = session.ocrResults || [];
+    let imagePaths = [];
+    let downloadedImages = false;
+    try {
+        if (!ocrResults.length || options.rerunGemini) {
+            const outputDir = outputBaseDir(session.teamId, session.id);
+            imagePaths = await downloadImages(session, outputDir);
+            downloadedImages = true;
+            ocrResults = await ocrImages(imagePaths, {
+                ...config.spreadsheets,
+                teamConfig
+            });
+        }
+
+        const parsed = applyCorrections(parseRaceScreenshots(ocrResults, teamConfig), session.corrections || []);
+        return attachAttendanceSnapshot({
+            ...session,
+            status: "preview",
+            metadata: parsed.metadata,
+            teamEventName: parsed.metadata?.eventName || parsed.metadata?.title || session.teamEventName || "",
+            players: parsed.players,
+            stats: parsed.stats,
+            rawOcrText: parsed.rawText,
+            rawGeminiText: ocrResults[0]?.rawGeminiText || "",
+            rawGeminiJson: ocrResults[0]?.structured || null
+        });
+    } finally {
+        if (downloadedImages) await removeSourceImages(session);
+    }
+}
+
+function previousMonthAnchor(now = new Date()) {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 12, 0, 0));
+}
+
+async function runSpreadsheetMaintenance(client, options = {}) {
+    const config = await loadDashboardConfig();
+    await cleanupSpreadsheetRawData({
+        retentionDays: config.spreadsheets.rawDataRetentionDays || 31
+    }).catch(error => {
+        console.error("Spreadsheet raw data cleanup failed:", error.message);
     });
+
+    const now = new Date();
+    if (!options.forceMonthly && now.getUTCDate() > 3) return [];
+
+    const teams = enabledSpreadsheetTeams(config).filter(team => team.outputChannelId);
+    const posted = [];
+    for (const teamConfig of teams) {
+        const result = await sendPeriodReport(client, teamConfig, "monthly", {
+            anchorDate: previousMonthAnchor(now),
+            force: Boolean(options.forceMonthly),
+            reason: options.forceMonthly ? "forced-monthly" : "month-end"
+        }).catch(error => {
+            console.error(`Automatic monthly report failed for ${teamConfig.id}:`, error.message);
+            return null;
+        });
+        if (result?.message) posted.push(result);
+    }
+
+    return posted;
+}
+
+let maintenanceStarted = false;
+
+function startSpreadsheetReportScheduler(client) {
+    if (maintenanceStarted) return;
+    maintenanceStarted = true;
+
+    setTimeout(() => {
+        runSpreadsheetMaintenance(client).catch(error => {
+            console.error("Spreadsheet maintenance failed:", error.message);
+        });
+    }, 60 * 1000);
+
+    setInterval(() => {
+        runSpreadsheetMaintenance(client).catch(error => {
+            console.error("Spreadsheet maintenance failed:", error.message);
+        });
+    }, 6 * 60 * 60 * 1000);
 }
 
 function scheduleProcessing(client, session, config, teamConfig) {
@@ -458,7 +714,7 @@ function scheduleProcessing(client, session, config, teamConfig) {
             const channel = await client.channels.fetch(session.channelId).catch(() => null);
             if (channel?.isTextBased?.()) {
                 await channel.send({
-                    content: `Spreadsheet OCR failed for session \`${session.id}\`: ${error.message}`,
+                    content: `Spreadsheet Gemini extraction failed for session \`${session.id}\`: ${error.message}`,
                     allowedMentions: { parse: [] }
                 }).catch(() => null);
             }
@@ -543,10 +799,14 @@ module.exports = {
     findSpreadsheetTeam,
     handleSpreadsheetMessage,
     listSpreadsheetSessions,
+    previewSpreadsheetSession,
     processSpreadsheetSession,
     rebuildSpreadsheetSession,
     requireSpreadsheetAccess,
+    runSpreadsheetMaintenance,
     resolveSessionForTeam,
     resolveTeamForInteraction,
-    sendSessionOutput
+    sendPeriodReport,
+    sendSessionOutput,
+    startSpreadsheetReportScheduler
 };

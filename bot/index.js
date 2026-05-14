@@ -15,7 +15,7 @@ const { syncMemberCountMessage } = require("./utils/memberCountManager");
 const { startTeamRoleScheduler } = require("./utils/teamRoleScheduler");
 const { handleWelcomeTeamButton } = require("./utils/welcomeRoleManager");
 const { startYouTubeNotifier } = require("./utils/youtubeManager");
-const { handleSpreadsheetMessage } = require("./utils/spreadsheetManager");
+const { handleSpreadsheetMessage, startSpreadsheetReportScheduler } = require("./utils/spreadsheetManager");
 
 // Error handlers
 process.on("unhandledRejection", reason => console.error("Unhandled Rejection:", reason));
@@ -256,6 +256,7 @@ client.once("ready", async () => {
 
     startYouTubeNotifier(client);
     startTeamRoleScheduler(client);
+    startSpreadsheetReportScheduler(client);
 
     syncRecruitmentBanList(client).catch(error => {
         console.error("Recruitment ban list sync error:", error.message);

@@ -5,7 +5,7 @@ const CONFIG_SCOPE = "dashboardConfig";
 const CONFIG_PATH = filePathFor(CONFIG_SCOPE);
 const SNOWFLAKE_RE = /^\d{10,25}$/;
 const HEX_COLOR_RE = /^#?[0-9a-f]{6}$/i;
-const CONFIG_VERSION = 5;
+const CONFIG_VERSION = 6;
 
 const DEFAULT_RECRUITMENT_QUESTIONS = [
     "Which team do you want to join?",
@@ -159,11 +159,8 @@ const DEFAULT_CONFIG = {
         sessionWindowMinutes: 5,
         outputFormat: "xlsx",
         libreOfficePath: "",
-        tesseractPath: "",
-        imageMagickPath: "",
-        tesseractLang: "eng",
-        tesseractPsm: "6,11",
-        keepSourceImages: false,
+        geminiModel: "gemini-2.5-flash",
+        rawDataRetentionDays: 31,
         teams: DEFAULT_SPREADSHEET_TEAMS
     },
     youtube: {
@@ -480,11 +477,8 @@ function normalizeSpreadsheets(input, fallback) {
         sessionWindowMinutes: cleanNumber(raw.sessionWindowMinutes, base.sessionWindowMinutes || 5, 1, 30),
         outputFormat: ["xlsx", "fods"].includes(outputFormat) ? outputFormat : "xlsx",
         libreOfficePath: cleanOptionalText(raw.libreOfficePath, process.env.LIBREOFFICE_PATH || base.libreOfficePath || "", 500),
-        tesseractPath: cleanOptionalText(raw.tesseractPath, process.env.TESSERACT_PATH || base.tesseractPath || "", 500),
-        imageMagickPath: cleanOptionalText(raw.imageMagickPath, process.env.IMAGEMAGICK_PATH || base.imageMagickPath || "", 500),
-        tesseractLang: cleanName(raw.tesseractLang, process.env.TESSERACT_LANG || base.tesseractLang || "eng", 40),
-        tesseractPsm: cleanOptionalText(raw.tesseractPsm, base.tesseractPsm || "6,11", 40),
-        keepSourceImages: cleanBoolean(raw.keepSourceImages, base.keepSourceImages === true),
+        geminiModel: cleanName(raw.geminiModel, process.env.GEMINI_FLASH_MODEL || process.env.GEMINI_MODEL || base.geminiModel || "gemini-2.5-flash", 80),
+        rawDataRetentionDays: cleanNumber(raw.rawDataRetentionDays, base.rawDataRetentionDays || 31, 1, 370),
         teams: (Array.isArray(rawTeams) ? rawTeams : [])
             .slice(0, 30)
             .map((team, index) => normalizeSpreadsheetTeam(team, base.teams?.[index], index))

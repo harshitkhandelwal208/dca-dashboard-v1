@@ -102,11 +102,10 @@ function topOpponentRank(session) {
 }
 
 function ownPlayersForSession(session) {
-    const own = (session.players || []).filter(player => player.teamType === "own");
-    return own.length ? own : (session.players || []);
+    return (session.players || []).filter(player => player.teamType === "own");
 }
 
-function buildReportModel(teamConfig, sessions, period, bounds) {
+function buildReportModel(teamConfig, sessions, period, bounds, allSessions = sessions) {
     const usedNames = new Set();
     const events = sessions.map((session, index) => ({
         id: session.id,
@@ -117,6 +116,24 @@ function buildReportModel(teamConfig, sessions, period, bounds) {
         session
     }));
     const playerMap = new Map();
+
+    for (const session of allSessions.filter(item => item.status === "processed")) {
+        for (const player of ownPlayersForSession(session)) {
+            const key = playerKey(player.playerName);
+            if (!key || playerMap.has(key)) continue;
+            playerMap.set(key, {
+                name: player.playerName,
+                scores: Array(events.length).fill(0),
+                ranks: Array(events.length).fill(null),
+                attended: 0,
+                missed: 0,
+                kab: 0,
+                total: 0,
+                max: 0,
+                percent: 0
+            });
+        }
+    }
 
     events.forEach((event, eventIndex) => {
         for (const player of ownPlayersForSession(event.session)) {
@@ -157,7 +174,7 @@ function buildReportModel(teamConfig, sessions, period, bounds) {
             if (event.topOpponentRank !== null) {
                 return rank < event.topOpponentRank ? total + 1 : total;
             }
-            return row.scores[index] >= event.max && event.max > 0 ? total + 1 : total;
+            return total;
         }, 0);
         return row;
     }).sort((a, b) =>
@@ -303,7 +320,7 @@ function addDetailsSheet(workbook, model) {
         ["Events included", model.totals.events],
         ["Players included", model.totals.players],
         ["Max score", model.totals.maxTotal],
-        ["#KAB definition", "Count of events where the player ranked above every opponent. If no opponent rows were detected, the event max score is used as fallback."],
+        ["#KAB definition", "Count of events where the player ranked above every opponent. If no opponent rows were detected, #KAB is 0 for that event because opponent order cannot be proven."],
         ["Missing event rule", "Missing players receive a score of 0 for that event and the full event max still counts against max."]
     ].forEach(item => addStyledRow(sheet, item));
 
@@ -370,7 +387,7 @@ async function generatePeriodReport(teamConfig, period, options = {}) {
     const sessions = filterSessionsForPeriod(allSessions, bounds);
     if (!sessions.length) return null;
 
-    const model = buildReportModel(teamConfig, sessions, period, bounds);
+    const model = buildReportModel(teamConfig, sessions, period, bounds, allSessions);
     const filePath = await writeReportWorkbook(model, outputDirFor(teamConfig));
 
     return {
@@ -424,7 +441,9 @@ function buildPeriodReportEmbed(report) {
 
 module.exports = {
     buildPeriodReportEmbed,
+    buildReportModel,
     generatePeriodReport,
     generateStandardPeriodReports,
+    periodBounds,
     reportAttachment
 };

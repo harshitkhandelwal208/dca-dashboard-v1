@@ -22,11 +22,23 @@ module.exports = {
                 },
                 {
                     name: "Spreadsheets And Team Events",
-                    value: "`/spreadsheets status`, `/spreadsheets sessions`, `/spreadsheets generate`, `/spreadsheets summary`, `/spreadsheets weekly`, `/spreadsheets monthly`, `/spreadsheets correct`, `/spreadsheets rebuild`, `/spreadsheets file`, `/spreadsheets chart`"
+                    value: "Submit one or more screenshots in the configured monitored channel. Images from the same user/channel are grouped for the dashboard grouping window, then Gemini Flash extracts event name, rows, scores, teams, podium data, and visible metadata."
                 },
                 {
-                    name: "Spreadsheet Reports",
-                    value: "Processed team events automatically rebuild weekly and monthly reports in the configured output channel. Missing event scores are set to `0`; `#KAB` counts events where a player ranked above every opponent."
+                    name: "Gemini Output And Files",
+                    value: "Normal event output posts only the final `.xlsx` plus a generated spreadsheet preview image to the configured output channel. Event names come from visible screenshot titles. Raw Gemini data is kept temporarily for audit and cleaned by retention."
+                },
+                {
+                    name: "#KAB And Missed Events",
+                    value: "`#KAB` is the count of events where a player ranked above every single opponent. If a known own-team player is absent from an event, that event is scored as `0` in summaries, weekly reports, and monthly reports."
+                },
+                {
+                    name: "Reports And Corrections",
+                    value: "Weekly reports post when the team event name changes. Monthly reports post after month end. Staff can use `/spreadsheets correct-name`, `correct-team`, `correct-placement`, `correct-points`, `correct-event-name`, `rebuild`, `regenerate-weekly`, and `regenerate-monthly`."
+                },
+                {
+                    name: "Temporary Spreadsheet Tests",
+                    value: "`/spreadsheets test-gemini`, `test-grouping`, `preview`, `rebuild-event`, `force-weekly`, and `force-monthly` are temporary development commands and can be removed later."
                 },
                 {
                     name: "Teams And Counts",

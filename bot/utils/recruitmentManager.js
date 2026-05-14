@@ -1053,42 +1053,68 @@ async function collectApplicantThreadImages(thread, applicantId, limit = 250) {
     return images.slice(0, 50);
 }
 
+function embedFieldValue(value, fallback = "Not detected", maxLength = 1024) {
+    const text = String(value || "")
+        .replace(/\s+/g, " ")
+        .trim();
+    return (text || fallback).slice(0, maxLength);
+}
+
+function firstImageAttachment(attachments = []) {
+    return attachments.find(attachment => attachment?.url) || null;
+}
+
+function formatRecruitmentEventScores(eventScores = []) {
+    const lines = eventScores
+        .filter(Boolean)
+        .slice(0, 8)
+        .map(event => {
+            const eventName = embedFieldValue(event.eventName, "Team Event", 120);
+            const details = [
+                event.rank ? `rank ${event.rank}` : "",
+                event.eventPoints ? `points ${event.eventPoints}` : "",
+                event.score ? `score ${event.score}` : ""
+            ].filter(Boolean).join(", ");
+            return details ? `**${eventName}** - ${details}` : `**${eventName}** - score not detected`;
+        });
+
+    return lines.length ? lines.join("\n").slice(0, 1024) : "Not detected";
+}
+
 async function sendRecruitmentLog(client, config, ticket, applicantImages = [], closeDetails = null) {
     const channelId = config.recruitment.logChannelId || config.logging.channelId;
-    if (!channelId || (!applicantImages.length && !closeDetails)) return;
+    if (!channelId || !closeDetails) return;
 
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel?.isTextBased?.()) return;
 
-    if (closeDetails) {
-        const embed = new EmbedBuilder()
-            .setTitle("Recruitment Closing Log")
-            .setColor(colorToNumber(config.recruitment.panelColor))
-            .addFields(
-                { name: "Discord ID", value: closeDetails.discordId || ticket.applicantId || "Unknown", inline: true },
-                { name: "In-game name", value: closeDetails.inGameName || "Not detected", inline: true },
-                { name: "Previous team", value: closeDetails.sourceTeam || "Not detected", inline: true },
-                { name: "Accepted into", value: closeDetails.acceptedTeam || ticket.team || "Rejected", inline: true },
-                { name: "Applicant", value: `<@${ticket.applicantId}>`, inline: true },
-                { name: "Closed by", value: ticket.closedById ? `<@${ticket.closedById}>` : "Unknown", inline: true }
-            )
-            .setTimestamp();
+    const licenseImage = firstImageAttachment(ticket.licenseAttachments || []) ||
+        firstImageAttachment(applicantImages);
+    const previousTeam = closeDetails.previousTeam || closeDetails.sourceTeam || "";
+    const embed = new EmbedBuilder()
+        .setTitle("Recruitment Closing Log")
+        .setColor(colorToNumber(config.recruitment.panelColor))
+        .addFields(
+            { name: "Discord user ID", value: embedFieldValue(closeDetails.discordId || ticket.applicantId, "Unknown"), inline: true },
+            { name: "Applicant", value: ticket.applicantId ? `<@${ticket.applicantId}>` : "Unknown", inline: true },
+            { name: "In-game name", value: embedFieldValue(closeDetails.inGameName), inline: true },
+            { name: "Previous team", value: embedFieldValue(previousTeam), inline: true },
+            { name: "Team joined", value: embedFieldValue(closeDetails.acceptedTeam || ticket.team || "Rejected", "Rejected"), inline: true },
+            { name: "Garage power", value: embedFieldValue(closeDetails.garagePower), inline: true },
+            { name: "Team event scores", value: formatRecruitmentEventScores(closeDetails.eventScores), inline: false },
+            { name: "Closed by", value: ticket.closedById ? `<@${ticket.closedById}>` : "Unknown", inline: true }
+        )
+        .setTimestamp();
 
-        if (closeDetails.error) {
-            embed.addFields({ name: "OCR note", value: closeDetails.error.slice(0, 1024), inline: false });
-        }
-
-        await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+    if (licenseImage?.url) {
+        embed.setImage(licenseImage.url);
     }
 
-    for (let index = 0; index < applicantImages.length; index += 10) {
-        const embeds = applicantImages.slice(index, index + 10).map(image =>
-            new EmbedBuilder()
-                .setImage(image.url)
-                .setColor(colorToNumber(config.recruitment.panelColor))
-        );
-        await channel.send({ embeds, allowedMentions: { parse: [] } });
+    if (closeDetails.error) {
+        embed.addFields({ name: "Gemini note", value: String(closeDetails.error).slice(0, 1024), inline: false });
     }
+
+    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
 }
 
 async function finishClose(interaction, outcomeId) {
@@ -1130,7 +1156,10 @@ async function finishClose(interaction, outcomeId) {
         discordId: ticket.applicantId,
         inGameName: "",
         sourceTeam: "",
+        previousTeam: "",
         acceptedTeam: accepted ? outcome.team : "Rejected",
+        garagePower: "",
+        eventScores: [],
         rawText: "",
         error: error.message
     }));
