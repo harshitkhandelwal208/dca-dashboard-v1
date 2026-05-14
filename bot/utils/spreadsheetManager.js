@@ -11,7 +11,7 @@ const { logAction } = require("./logStore");
 const { ocrImages, parseRaceScreenshots, summarizePlayers } = require("./raceOcr");
 const {
     generatePeriodReport,
-    reportAttachment
+    reportAttachments
 } = require("./spreadsheetReports");
 const {
     cleanupSpreadsheetRawData,
@@ -228,6 +228,42 @@ function eventNameForSession(session) {
     ).replace(/\s+/g, " ").trim();
 }
 
+function uniqueNames(values) {
+    const map = new Map();
+    for (const value of values || []) {
+        const text = String(value || "").replace(/\s+/g, " ").trim();
+        const key = playerKey(text);
+        if (key && !map.has(key)) map.set(key, text);
+    }
+    return [...map.values()];
+}
+
+async function ownPlayerRosterForTeam(teamId, excludeSessionId = "") {
+    const sessions = await listSpreadsheetSessions({ teamId });
+    const names = [];
+
+    for (const historical of sessions) {
+        if (historical.id === excludeSessionId || historical.status !== "processed") continue;
+        names.push(...(historical.attendance?.roster || []));
+        for (const player of historical.players || []) {
+            if (player.teamType === "own") names.push(player.playerName);
+        }
+    }
+
+    return uniqueNames(names);
+}
+
+async function teamConfigWithKnownRoster(teamConfig, currentSessionId = "") {
+    const learnedRoster = await ownPlayerRosterForTeam(teamConfig.id, currentSessionId);
+    return {
+        ...teamConfig,
+        ownPlayerAliases: uniqueNames([
+            ...(teamConfig.ownPlayerAliases || []),
+            ...learnedRoster
+        ])
+    };
+}
+
 async function attachAttendanceSnapshot(session) {
     const sessions = await listSpreadsheetSessions({ teamId: session.teamId });
     const roster = new Map();
@@ -292,6 +328,7 @@ async function processSpreadsheetSession(client, sessionId, options = {}) {
     const teamConfig = findSpreadsheetTeam(config, session.teamId);
     if (!teamConfig) throw new Error("Spreadsheet team config was not found.");
     if (session.status === "processing") return session;
+    const extractionTeamConfig = await teamConfigWithKnownRoster(teamConfig, session.id);
 
     session = await updateSpreadsheetSession(session.id, {
         status: "processing",
@@ -307,11 +344,11 @@ async function processSpreadsheetSession(client, sessionId, options = {}) {
             imagePaths = await downloadImages(session, outputDir);
             ocrResults = await ocrImages(imagePaths, {
                 ...config.spreadsheets,
-                teamConfig
+                teamConfig: extractionTeamConfig
             });
-            parsed = parseRaceScreenshots(ocrResults, teamConfig);
+            parsed = parseRaceScreenshots(ocrResults, extractionTeamConfig);
         } else {
-            parsed = parseRaceScreenshots(ocrResults, teamConfig);
+            parsed = parseRaceScreenshots(ocrResults, extractionTeamConfig);
         }
 
         parsed = applyCorrections(parsed, session.corrections || []);
@@ -364,9 +401,10 @@ async function rebuildSpreadsheetSession(client, sessionId) {
     if (!session) throw new Error("Spreadsheet session not found.");
     const teamConfig = findSpreadsheetTeam(config, session.teamId);
     if (!teamConfig) throw new Error("Spreadsheet team config was not found.");
+    const extractionTeamConfig = await teamConfigWithKnownRoster(teamConfig, session.id);
     const parsed = applyCorrections(
         session.ocrResults?.length
-            ? parseRaceScreenshots(session.ocrResults, teamConfig)
+            ? parseRaceScreenshots(session.ocrResults, extractionTeamConfig)
             : {
                 metadata: session.metadata || {},
                 players: session.players || [],
@@ -534,10 +572,12 @@ async function sendPeriodReport(client, teamConfig, period, options = {}) {
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel?.isTextBased?.()) return { skipped: true, reason: "output-channel-unavailable", report };
 
-    const attachment = reportAttachment(report);
+    const attachments = reportAttachments(report);
     const message = await channel.send({
-        content: `${period === "weekly" ? "Weekly" : "Monthly"} team-event report for **${teamConfig.name}** (${report.periodLabel}). Missed events are scored as 0.`,
-        files: attachment ? [attachment] : [],
+        content: period === "weekly"
+            ? `Weekly report for **${teamConfig.name}** - **${eventNameForSession({ metadata: { eventName: report.eventName } })}** (${report.periodLabel}).`
+            : `Monthly report for **${teamConfig.name}** (${report.periodLabel}).`,
+        files: attachments,
         allowedMentions: { parse: [] }
     });
     await markReportEmitted(report, {
@@ -549,28 +589,34 @@ async function sendPeriodReport(client, teamConfig, period, options = {}) {
     return { report, message };
 }
 
-async function shouldEmitWeeklyForEventChange(teamConfig, session) {
-    const currentName = normalize(eventNameForSession(session));
-    if (!currentName) return false;
-
+async function previousProcessedSession(teamConfig, session) {
+    const currentDate = processedDate(session);
     const sessions = (await listSpreadsheetSessions({ teamId: teamConfig.id }))
         .filter(item => item.status === "processed" && item.id !== session.id)
         .sort((a, b) => processedDate(b) - processedDate(a));
-    const previous = sessions.find(item => processedDate(item) <= processedDate(session)) || sessions[0];
+    return sessions.find(item => processedDate(item) <= currentDate) || sessions[0] || null;
+}
+
+async function weeklyReportAnchorForEventChange(teamConfig, session) {
+    const currentName = normalize(eventNameForSession(session));
+    if (!currentName) return false;
+
+    const previous = await previousProcessedSession(teamConfig, session);
     if (!previous) return false;
 
-    return normalize(eventNameForSession(previous)) !== currentName;
+    return normalize(eventNameForSession(previous)) !== currentName ? previous : null;
 }
 
 async function postAutomaticReports(client, teamConfig, session) {
     if (!teamConfig?.outputChannelId) return [];
     const posted = [];
 
-    if (await shouldEmitWeeklyForEventChange(teamConfig, session)) {
+    const reportAnchor = await weeklyReportAnchorForEventChange(teamConfig, session);
+    if (reportAnchor) {
         const result = await sendPeriodReport(client, teamConfig, "weekly", {
-            anchorDate: processedDate(session),
-            force: true,
-            reason: `event-name-change:${eventNameForSession(session)}`
+            anchorDate: processedDate(reportAnchor),
+            force: false,
+            reason: `event-name-change:${eventNameForSession(reportAnchor)}->${eventNameForSession(session)}`
         }).catch(error => {
             console.error("Automatic weekly report failed:", error.message);
             return null;
@@ -590,10 +636,12 @@ async function sendSessionOutput(client, session) {
         if (!channel?.isTextBased?.()) return null;
 
         const spreadsheet = attachmentFor(session.outputs?.spreadsheetPath);
-        const previewImage = attachmentFor(session.outputs?.spreadsheetImagePath);
+        const spreadsheetImage = attachmentFor(session.outputs?.spreadsheetImagePath);
+        const chartImage = attachmentFor(session.outputs?.chartPath);
         const files = [
             spreadsheet,
-            previewImage
+            spreadsheetImage,
+            chartImage
         ].filter(Boolean);
         const content = teamConfig?.outputChannelId
             ? `Final team-event output for **${eventNameForSession(session)}** (\`${session.id}\`).`
@@ -616,6 +664,7 @@ async function previewSpreadsheetSession(sessionId, options = {}) {
     if (!session) throw new Error("Spreadsheet session not found.");
     const teamConfig = findSpreadsheetTeam(config, session.teamId);
     if (!teamConfig) throw new Error("Spreadsheet team config was not found.");
+    const extractionTeamConfig = await teamConfigWithKnownRoster(teamConfig, session.id);
 
     let ocrResults = session.ocrResults || [];
     let imagePaths = [];
@@ -627,11 +676,11 @@ async function previewSpreadsheetSession(sessionId, options = {}) {
             downloadedImages = true;
             ocrResults = await ocrImages(imagePaths, {
                 ...config.spreadsheets,
-                teamConfig
+                teamConfig: extractionTeamConfig
             });
         }
 
-        const parsed = applyCorrections(parseRaceScreenshots(ocrResults, teamConfig), session.corrections || []);
+        const parsed = applyCorrections(parseRaceScreenshots(ocrResults, extractionTeamConfig), session.corrections || []);
         return attachAttendanceSnapshot({
             ...session,
             status: "preview",

@@ -9,7 +9,8 @@
   "scripts": {
     "start": "npm run deploy:commands && node index.js",
     "start:runtime": "node index.js",
-    "deploy:commands": "node deploy-commands.js"
+    "deploy:commands": "node deploy-commands.js",
+    "test:spreadsheets": "node scripts/test-spreadsheets.js"
   },
   "dependencies": {
     "discord.js": "^14.15.0",

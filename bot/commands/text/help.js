@@ -25,7 +25,7 @@ module.exports = {
             .addFields(
                 {
                     name: "Team Event Spreadsheets",
-                    value: "Post screenshots in the configured channel. The bot groups images by user/channel and window, uses Gemini Flash to extract event names, ranks, players, scores, teams, podium data, and posts only the final XLSX plus a generated spreadsheet preview image for normal events."
+                    value: "Post screenshots in the configured channel. The bot groups images by user/channel and window, uses Gemini Flash to extract event names, ranks, players, scores, teams, podium data, and posts the final XLSX plus full spreadsheet and chart images."
                 },
                 {
                     name: "#KAB, Reports, Corrections",

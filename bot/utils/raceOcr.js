@@ -366,8 +366,32 @@ function teamAliases(teamConfig = {}) {
     ].filter(Boolean);
 }
 
+function ownPlayerAliases(teamConfig = {}) {
+    return [
+        ...(teamConfig.ownPlayerAliases || []),
+        ...(teamConfig.ownPlayerNames || []),
+        ...(teamConfig.knownOwnPlayers || [])
+    ].filter(Boolean);
+}
+
+function playerAliasMatches(playerName, teamConfig = {}) {
+    const normalizedName = normalizeForMatch(playerName);
+    if (!normalizedName) return "";
+
+    const nameTokens = new Set(normalizedName.split(" ").filter(Boolean));
+    return ownPlayerAliases(teamConfig).find(alias => {
+        const aliasNorm = normalizeForMatch(alias);
+        if (!aliasNorm) return false;
+        if (normalizedName === aliasNorm) return true;
+        if (aliasNorm.length < 3) return false;
+        if (nameTokens.has(aliasNorm)) return true;
+        return normalizedName.split(" ").join("").endsWith(aliasNorm.split(" ").join(""));
+    }) || "";
+}
+
 function buildTeamEventPrompt(teamConfig = {}) {
     const aliases = teamAliases(teamConfig);
+    const knownPlayers = ownPlayerAliases(teamConfig).slice(0, 150);
     return [
         "You extract structured data from Hill Climb Racing 2 team-event screenshots and generated team-event spreadsheets.",
         "All images in this request are from one Discord submission/session and may include podium, team score summary, final standings, cropped ranking lists, or spreadsheet screenshots.",
@@ -376,6 +400,7 @@ function buildTeamEventPrompt(teamConfig = {}) {
         "Configured own team:",
         `- name: ${teamConfig.name || "unknown"}`,
         `- aliases: ${aliases.length ? aliases.join(", ") : "none"}`,
+        `- known own players: ${knownPlayers.length ? knownPlayers.join(", ") : "none"}`,
         "",
         "Important rules:",
         "- Identify the event name from the screenshots. Use the visible event title, not the Discord channel name.",
@@ -384,6 +409,7 @@ function buildTeamEventPrompt(teamConfig = {}) {
         "- Extract event points/cup points separately from total score when both are visible.",
         "- For scores with spaces, output the numeric value without spaces, for example '52 723' becomes 52723.",
         "- Classify each row as own, opponent, or unknown by using team labels, aliases, colors, side of the versus screen, highlighted rows, prefixes like DC, and surrounding layout context.",
+        "- If a visible player name exactly matches a configured known own player, classify that player as own even when the row has no visible team label.",
         "- Do not mix team assignments. If a row cannot be verified as the configured own team, use opponent or unknown.",
         "- Do not calculate #KAB. The bot calculates it after parsing.",
         "- Include raw visible text for debugging.",
@@ -599,9 +625,10 @@ function classifyPlayer(row, teamConfig = {}) {
     const aliases = teamAliases(teamConfig);
     const haystack = `${row.playerName || ""} ${row.teamLabel || ""} ${row.rawLine || ""} ${row.classificationReason || ""}`;
     const matchedAlias = aliasMatches(haystack, aliases);
+    const matchedPlayer = playerAliasMatches(row.playerName, teamConfig);
     const dcPrefix = /\b(?:dc|dca)\s*[\]|]/i.test(row.playerName || "") || /^\s*(?:\[?dc\]?|\|?dc\|)/i.test(row.playerName || "");
     const normalizedType = normalizeTeamType(row.teamType);
-    const own = Boolean(matchedAlias || dcPrefix || normalizedType === "own");
+    const own = Boolean(matchedAlias || matchedPlayer || dcPrefix || normalizedType === "own");
     const opponent = normalizedType === "opponent" || !own;
 
     return {
@@ -613,13 +640,15 @@ function classifyPlayer(row, teamConfig = {}) {
         teamColor: own ? "yellow" : "blue",
         classificationSource: matchedAlias
             ? `alias:${matchedAlias}`
-            : dcPrefix
-                ? "name-prefix"
-                : normalizedType === "own"
-                    ? "gemini-own"
-                    : opponent
-                        ? "gemini-opponent"
-                        : "default-opponent"
+            : matchedPlayer
+                ? `known-player:${matchedPlayer}`
+                : dcPrefix
+                    ? "name-prefix"
+                    : normalizedType === "own"
+                        ? "gemini-own"
+                        : opponent
+                            ? "gemini-opponent"
+                            : "default-opponent"
     };
 }
 

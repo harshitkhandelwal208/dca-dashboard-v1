@@ -16,7 +16,7 @@ const {
 const {
     buildPeriodReportEmbed,
     generatePeriodReport,
-    reportAttachment
+    reportAttachments
 } = require("../../utils/spreadsheetReports");
 
 function teamOption(option) {
@@ -87,7 +87,8 @@ function anchorDateOption(option) {
 function filesForSession(session, includeChart = true) {
     return [
         attachmentFor(session.outputs?.spreadsheetPath),
-        includeChart ? attachmentFor(session.outputs?.spreadsheetImagePath) : null
+        includeChart ? attachmentFor(session.outputs?.spreadsheetImagePath) : null,
+        includeChart ? attachmentFor(session.outputs?.chartPath) : null
     ].filter(Boolean);
 }
 
@@ -126,11 +127,11 @@ async function replyWithPeriodReport(interaction, teamConfig, period) {
         return;
     }
 
-    const attachment = reportAttachment(report);
+    const attachments = reportAttachments(report);
     await interaction.editReply({
         content: `${period === "weekly" ? "Weekly" : "Monthly"} report for **${teamConfig.name}**.`,
         embeds: [buildPeriodReportEmbed(report)],
-        files: attachment ? [attachment] : []
+        files: attachments
     });
 }
 

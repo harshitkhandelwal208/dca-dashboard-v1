@@ -5,7 +5,7 @@ const CONFIG_SCOPE = "dashboardConfig";
 const CONFIG_PATH = filePathFor(CONFIG_SCOPE);
 const SNOWFLAKE_RE = /^\d{10,25}$/;
 const HEX_COLOR_RE = /^#?[0-9a-f]{6}$/i;
-const CONFIG_VERSION = 7;
+const CONFIG_VERSION = 8;
 
 const DEFAULT_RECRUITMENT_QUESTIONS = [
     "Which team do you want to join?",
@@ -51,6 +51,7 @@ const DEFAULT_SPREADSHEET_TEAMS = DEFAULT_MEMBER_TEAMS.map(team => ({
     outputChannelId: "",
     accessRoleId: "",
     ownTeamAliases: [...new Set([team.name, ...(team.aliases || [])])],
+    ownPlayerAliases: [],
     autoProcess: true
 }));
 
@@ -464,6 +465,7 @@ function normalizeSpreadsheetTeam(input, fallback, index) {
         outputChannelId: cleanSnowflake(raw.outputChannelId, base.outputChannelId || ""),
         accessRoleId: cleanSnowflake(raw.accessRoleId, base.accessRoleId || ""),
         ownTeamAliases: cleanStringList(raw.ownTeamAliases, base.ownTeamAliases || [name], 25, 80),
+        ownPlayerAliases: cleanStringList(raw.ownPlayerAliases, base.ownPlayerAliases || [], 250, 80),
         autoProcess: cleanBoolean(raw.autoProcess, base.autoProcess !== false)
     };
 }

@@ -771,6 +771,7 @@ export default function App() {
                         outputChannelId: "",
                         accessRoleId: "",
                         ownTeamAliases: [],
+                        ownPlayerAliases: [],
                         autoProcess: true
                     })}>Add Team</IconButton>
                 }>
@@ -787,6 +788,7 @@ export default function App() {
                                 <SelectField label="Output channel" value={team.outputChannelId || ""} onChange={value => patchItem("spreadsheets.teams", index, { outputChannelId: value })} options={spreadsheetChannels} placeholder="Submission channel" />
                                 <SelectField label="Team access role" value={team.accessRoleId || ""} onChange={value => patchItem("spreadsheets.teams", index, { accessRoleId: value })} options={spreadsheetRoles} placeholder="Admins only" />
                                 <Field label="Own team aliases"><TextInput value={(team.ownTeamAliases || []).join(", ")} onChange={event => patchItem("spreadsheets.teams", index, { ownTeamAliases: event.target.value.split(",").map(item => item.trim()).filter(Boolean) })} /></Field>
+                                <Field label="Known own players"><TextInput value={(team.ownPlayerAliases || []).join(", ")} onChange={event => patchItem("spreadsheets.teams", index, { ownPlayerAliases: event.target.value.split(",").map(item => item.trim()).filter(Boolean) })} /></Field>
                                 <Toggle label="Auto process" checked={team.autoProcess !== false} onChange={value => patchItem("spreadsheets.teams", index, { autoProcess: value })} />
                             </div>
                         ))}

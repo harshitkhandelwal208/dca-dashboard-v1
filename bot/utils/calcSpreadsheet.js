@@ -1,10 +1,30 @@
 const fs = require("fs");
 const path = require("path");
 const { runCommand } = require("./raceOcr");
+const {
+    blueKillPercent,
+    bluesKilledForRank,
+    eventMaxPoints,
+    eventMaxScore,
+    eventNameForSession,
+    opponentCount,
+    opponentPlayersForSession,
+    ownPlayersForSession,
+    pointsValue,
+    scoreValue,
+    sessionKabMap,
+    sessionOpponentTeams,
+    teamScoreFromMetadata
+} = require("./spreadsheetMetrics");
 
 const OWN_COLOR = "#fff2cc";
-const OPPONENT_COLOR = "#cfe2ff";
+const OPPONENT_COLOR = "#dbeafe";
 const HEADER_COLOR = "#1f2937";
+const TITLE_COLOR = "#0f766e";
+const ACCENT_GREEN = "#d9ead3";
+const ACCENT_RED = "#fee2e2";
+const ACCENT_BLUE = "#dbeafe";
+const KAB_COLOR = "#0f7dba";
 
 function escapeXml(value) {
     return String(value ?? "")
@@ -21,6 +41,15 @@ function safeSheetName(value) {
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 31) || "Sheet";
+}
+
+function safeFileName(value, fallback = "spreadsheet") {
+    const clean = String(value || fallback)
+        .replace(/[/\\?%*:|"<>]/g, "-")
+        .replace(/\s+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 90);
+    return clean || fallback;
 }
 
 function cell(value, styleName = "Cell") {
@@ -48,65 +77,86 @@ function table(name, rowsXml) {
     ].join("\n");
 }
 
-function sessionKabMap(session) {
-    const players = session.players || [];
-    const own = players.filter(player => player.teamType === "own");
-    const opponentRanks = players
-        .filter(player => player.teamType !== "own")
-        .map(player => Number(player.rank))
-        .filter(rank => Number.isFinite(rank));
-    const topOpponentRank = opponentRanks.length ? Math.min(...opponentRanks) : null;
-    const map = new Map();
+function eventSummary(session) {
+    const stats = session.stats || {};
+    const kabMap = sessionKabMap(session);
+    const ownPlayers = ownPlayersForSession(session);
+    const opponents = opponentPlayersForSession(session);
+    const topDriver = ownPlayers
+        .slice()
+        .sort((a, b) => Number(a.rank || 999) - Number(b.rank || 999))[0];
 
-    for (const player of own) {
-        const rank = Number(player.rank);
-        const kab = topOpponentRank !== null && Number.isFinite(rank) && rank < topOpponentRank;
-        map.set(player.playerName, kab ? 1 : 0);
-    }
+    return {
+        eventName: eventNameForSession(session),
+        teamName: session.metadata?.ownTeamName || session.teamName || session.teamId || "Team",
+        opponentTeams: sessionOpponentTeams(session),
+        ownPlayers,
+        opponents,
+        opponentCount: opponentCount(session),
+        ownPoints: stats.ownPoints || ownPlayers.reduce((total, player) => total + pointsValue(player), 0),
+        opponentPoints: stats.opponentPoints || opponents.reduce((total, player) => total + pointsValue(player), 0),
+        ownScore: stats.ownScore || ownPlayers.reduce((total, player) => total + scoreValue(player), 0),
+        opponentScore: stats.opponentScore || opponents.reduce((total, player) => total + scoreValue(player), 0),
+        ownTeamScore: teamScoreFromMetadata(session, "own"),
+        opponentTeamScore: teamScoreFromMetadata(session, "opponent"),
+        eventMaxScore: eventMaxScore(session),
+        eventMaxPoints: eventMaxPoints(session),
+        kabCount: [...kabMap.values()].reduce((total, value) => total + value, 0),
+        topDriver
+    };
+}
 
-    return map;
+function playerDisplayRows(session) {
+    const kabMap = sessionKabMap(session);
+    const possibleBlues = opponentCount(session);
+
+    return (session.players || [])
+        .slice()
+        .sort((a, b) => Number(a.rank || 999) - Number(b.rank || 999))
+        .map(player => {
+            const own = player.teamType === "own";
+            const killed = own ? bluesKilledForRank(session, player.rank) : "";
+            const killedPercent = own ? blueKillPercent(killed, possibleBlues) : "";
+
+            return {
+                own,
+                values: [
+                    player.rank ?? "",
+                    player.playerName || "",
+                    player.teamLabel || (own ? session.teamName || session.teamId || "Own team" : "Opponent"),
+                    own ? "Own" : "Opponent",
+                    pointsValue(player) || "",
+                    scoreValue(player) || "",
+                    killed,
+                    killedPercent === "" ? "" : `${killedPercent}%`,
+                    kabMap.get(player.playerName) || 0
+                ]
+            };
+        });
 }
 
 function summaryRows(session) {
-    const stats = session.stats || {};
-    const metadata = session.metadata || {};
-    const teamScores = metadata.teamScores || {};
-    const kabMap = sessionKabMap(session);
+    const summary = eventSummary(session);
     const rows = [
         row(["Metric", "Value"], "HeaderCell"),
-        row(["Session", metadata.title || session.id]),
-        row(["Team", metadata.ownTeamName || session.teamName || session.teamId]),
+        row(["Team Event", summary.eventName]),
+        row(["Own Team", summary.teamName]),
+        row(["Enemy Team(s)", summary.opponentTeams.join(", ")]),
         row(["Submission ID", session.id]),
         row(["Images", (session.images || []).length]),
-        row(["Total players parsed", stats.totalPlayers || 0]),
-        row(["Own team players", stats.ownPlayers || 0]),
-        row(["Opponents", stats.opponents || 0]),
-        row(["Own average rank", stats.ownAverageRank ?? ""]),
-        row(["Opponent average rank", stats.opponentAverageRank ?? ""]),
-        row(["Own points", stats.ownPoints || 0]),
-        row(["Opponent points", stats.opponentPoints || 0]),
-        row(["Own score", stats.ownScore || 0]),
-        row(["Opponent score", stats.opponentScore || 0]),
-        row(["#KAB this event", [...kabMap.values()].reduce((total, value) => total + value, 0)]),
-        row(["#KAB definition", "Player ranked above every opponent in this event. If no opponent rows were detected, #KAB is 0 because opponent order cannot be proven."])
+        row(["Own Drivers", summary.ownPlayers.length]),
+        row(["Enemy Drivers", summary.opponentCount]),
+        row(["Own Event Points", summary.ownPoints]),
+        row(["Enemy Event Points", summary.opponentPoints]),
+        row(["Own Score", summary.ownScore]),
+        row(["Enemy Score", summary.opponentScore]),
+        row(["Own Team Score", summary.ownTeamScore || ""]),
+        row(["Enemy Team Score", summary.opponentTeamScore || ""]),
+        row(["#KAB", summary.kabCount])
     ];
 
-    if (teamScores.rawLine) {
-        rows.push(row(["Team score line", teamScores.rawLine]));
-        rows.push(row(["Detected own team score", teamScores.own ?? ""]));
-        rows.push(row(["Detected opponent score", teamScores.opponent ?? ""]));
-    }
-
-    rows.push(row(["", ""]));
-    rows.push(row(["Podium", "Player", "Team", "Points", "Score"], "HeaderCell"));
-    for (const player of stats.podium || []) {
-        rows.push(row([player.rank, player.playerName, player.teamLabel, player.points ?? "", player.score ?? ""]));
-    }
-
-    rows.push(row(["", ""]));
-    rows.push(row(["Own Player", "Rank", "Opponents Below"], "HeaderCell"));
-    for (const item of stats.opponentsBelowByPlayer || []) {
-        rows.push(row([item.playerName, item.rank, item.opponentsBelow]));
+    if (summary.topDriver) {
+        rows.push(row(["Top Own Driver", `#${summary.topDriver.rank} ${summary.topDriver.playerName}`]));
     }
 
     return rows.join("\n");
@@ -117,114 +167,44 @@ function resultRows(session) {
         "Rank",
         "Player",
         "Team",
-        "Color",
+        "Type",
         "Event Points",
         "Score",
-        "Opponents Below",
-        "#KAB",
-        "Classification",
-        "Confidence",
-        "Source",
-        "Raw Gemini Text"
+        "Blues Killed",
+        "Blue Kill %",
+        "#KAB"
     ];
-    const stats = session.stats || {};
-    const belowMap = new Map((stats.opponentsBelowByPlayer || []).map(item => [item.playerName, item.opponentsBelow]));
-    const kabMap = sessionKabMap(session);
     const rows = [row(headers, "HeaderCell")];
 
-    for (const player of session.players || []) {
-        const style = player.teamType === "own" ? "OwnCell" : "OpponentCell";
-        rows.push(`<table:table-row>${
-            [
-                cell(player.rank, style),
-                cell(player.playerName, style),
-                cell(player.teamLabel, style),
-                cell(player.teamColor === "yellow" ? "Yellow - own team" : "Blue - opponent", style),
-                cell(player.points ?? "", style),
-                cell(player.score ?? "", style),
-                cell(belowMap.get(player.playerName) ?? "", style),
-                cell(kabMap.get(player.playerName) || 0, style),
-                cell(player.classificationSource || "", style),
-                cell(player.confidence ?? "", style),
-                cell(player.sourceImage || "", style),
-                cell(player.rawLine || "", style)
-            ].join("")
-        }</table:table-row>`);
+    for (const item of playerDisplayRows(session)) {
+        rows.push(row(item.values, item.own ? "OwnCell" : "OpponentCell"));
     }
 
     return rows.join("\n");
-}
-
-function chartRows(session) {
-    const stats = session.stats || {};
-    const maxPoints = Math.max(1, stats.ownPoints || 0, stats.opponentPoints || 0);
-    const bar = value => "#".repeat(Math.max(1, Math.round((Number(value || 0) / maxPoints) * 30)));
-    const rows = [
-        row(["Score Comparison", "Value", "Bar"], "HeaderCell"),
-        row(["Own points", stats.ownPoints || 0, bar(stats.ownPoints)]),
-        row(["Opponent points", stats.opponentPoints || 0, bar(stats.opponentPoints)]),
-        row(["Own score", stats.ownScore || 0, bar(stats.ownScore)]),
-        row(["Opponent score", stats.opponentScore || 0, bar(stats.opponentScore)]),
-        row(["", ""]),
-        row(["Placement Bucket", "Own", "Opponents"], "HeaderCell")
-    ];
-
-    for (const bucket of stats.buckets || []) {
-        rows.push(row([bucket.label, bucket.own, bucket.opponents]));
-    }
-
-    return rows.join("\n");
-}
-
-function rawRows(session) {
-    return [
-        row(["Image", "Gemini visible text / structured response"], "HeaderCell"),
-        ...(session.ocrResults || []).map((result, index) =>
-            row([`Image ${index + 1}`, result.text || ""])
-        )
-    ].join("\n");
 }
 
 function summaryWorkbookRows(session) {
-    const stats = session.stats || {};
-    const metadata = session.metadata || {};
-    const teamScores = metadata.teamScores || {};
-    const kabMap = sessionKabMap(session);
+    const summary = eventSummary(session);
     const rows = [
         { values: ["Metric", "Value"], header: true },
-        { values: ["Session", metadata.title || session.id] },
-        { values: ["Team", metadata.ownTeamName || session.teamName || session.teamId] },
+        { values: ["Team Event", summary.eventName], fill: ACCENT_GREEN },
+        { values: ["Own Team", summary.teamName] },
+        { values: ["Enemy Team(s)", summary.opponentTeams.join(", ")], fill: ACCENT_BLUE },
         { values: ["Submission ID", session.id] },
         { values: ["Images", (session.images || []).length] },
-        { values: ["Total players parsed", stats.totalPlayers || 0] },
-        { values: ["Own team players", stats.ownPlayers || 0] },
-        { values: ["Opponents", stats.opponents || 0] },
-        { values: ["Own average rank", stats.ownAverageRank ?? ""] },
-        { values: ["Opponent average rank", stats.opponentAverageRank ?? ""] },
-        { values: ["Own points", stats.ownPoints || 0] },
-        { values: ["Opponent points", stats.opponentPoints || 0] },
-        { values: ["Own score", stats.ownScore || 0] },
-        { values: ["Opponent score", stats.opponentScore || 0] },
-        { values: ["#KAB this event", [...kabMap.values()].reduce((total, value) => total + value, 0)] },
-        { values: ["#KAB definition", "Player ranked above every opponent in this event. If no opponent rows were detected, #KAB is 0 because opponent order cannot be proven."] }
+        { values: ["Own Drivers", summary.ownPlayers.length] },
+        { values: ["Enemy Drivers", summary.opponentCount] },
+        { values: ["Own Event Points", summary.ownPoints] },
+        { values: ["Enemy Event Points", summary.opponentPoints] },
+        { values: ["Own Score", summary.ownScore] },
+        { values: ["Enemy Score", summary.opponentScore] },
+        { values: ["Own Team Score", summary.ownTeamScore || ""] },
+        { values: ["Enemy Team Score", summary.opponentTeamScore || ""] },
+        { values: ["#KAB", summary.kabCount], fill: summary.kabCount ? "#cfe2ff" : "" }
     ];
 
-    if (teamScores.rawLine) {
-        rows.push({ values: ["Team score line", teamScores.rawLine] });
-        rows.push({ values: ["Detected own team score", teamScores.own ?? ""] });
-        rows.push({ values: ["Detected opponent score", teamScores.opponent ?? ""] });
-    }
-
-    rows.push({ values: ["", ""] });
-    rows.push({ values: ["Podium", "Player", "Team", "Points", "Score"], header: true });
-    for (const player of stats.podium || []) {
-        rows.push({ values: [player.rank, player.playerName, player.teamLabel, player.points ?? "", player.score ?? ""] });
-    }
-
-    rows.push({ values: ["", ""] });
-    rows.push({ values: ["Own Player", "Rank", "Opponents Below"], header: true });
-    for (const item of stats.opponentsBelowByPlayer || []) {
-        rows.push({ values: [item.playerName, item.rank, item.opponentsBelow] });
+    if (summary.topDriver) {
+        rows.push({ values: ["Top Own Driver", `#${summary.topDriver.rank} ${summary.topDriver.playerName}`], fill: "#e2f0d9" });
     }
 
     return rows;
@@ -235,94 +215,44 @@ function resultWorkbookRows(session) {
         "Rank",
         "Player",
         "Team",
-        "Color",
+        "Type",
         "Event Points",
         "Score",
-        "Opponents Below",
-        "#KAB",
-        "Classification",
-        "Confidence",
-        "Source",
-        "Raw Gemini Text"
-    ];
-    const stats = session.stats || {};
-    const belowMap = new Map((stats.opponentsBelowByPlayer || []).map(item => [item.playerName, item.opponentsBelow]));
-    const kabMap = sessionKabMap(session);
-    const rows = [{ values: headers, header: true }];
-
-    for (const player of session.players || []) {
-        rows.push({
-            values: [
-                player.rank,
-                player.playerName,
-                player.teamLabel,
-                player.teamColor === "yellow" ? "Yellow - own team" : "Blue - opponent",
-                player.points ?? "",
-                player.score ?? "",
-                belowMap.get(player.playerName) ?? "",
-                kabMap.get(player.playerName) || 0,
-                player.classificationSource || "",
-                player.confidence ?? "",
-                player.sourceImage || "",
-                player.rawLine || ""
-            ],
-            fill: player.teamType === "own" ? OWN_COLOR : OPPONENT_COLOR
-        });
-    }
-
-    return rows;
-}
-
-function chartWorkbookRows(session) {
-    const stats = session.stats || {};
-    const maxPoints = Math.max(1, stats.ownPoints || 0, stats.opponentPoints || 0);
-    const bar = value => "#".repeat(Math.max(1, Math.round((Number(value || 0) / maxPoints) * 30)));
-    const rows = [
-        { values: ["Score Comparison", "Value", "Bar"], header: true },
-        { values: ["Own points", stats.ownPoints || 0, bar(stats.ownPoints)] },
-        { values: ["Opponent points", stats.opponentPoints || 0, bar(stats.opponentPoints)] },
-        { values: ["Own score", stats.ownScore || 0, bar(stats.ownScore)] },
-        { values: ["Opponent score", stats.opponentScore || 0, bar(stats.opponentScore)] },
-        { values: ["", ""] },
-        { values: ["Placement Bucket", "Own", "Opponents"], header: true }
+        "Blues Killed",
+        "Blue Kill %",
+        "#KAB"
     ];
 
-    for (const bucket of stats.buckets || []) {
-        rows.push({ values: [bucket.label, bucket.own, bucket.opponents] });
-    }
-
-    return rows;
-}
-
-function rawWorkbookRows(session) {
     return [
-        { values: ["Image", "Gemini visible text / structured response"], header: true },
-        ...(session.ocrResults || []).map((result, index) => ({
-            values: [`Image ${index + 1}`, result.text || ""]
+        { values: headers, header: true },
+        ...playerDisplayRows(session).map(item => ({
+            values: item.values,
+            fill: item.own ? OWN_COLOR : OPPONENT_COLOR,
+            kab: Number(item.values[8]) > 0,
+            own: item.own
         }))
     ];
 }
 
 function attendanceWorkbookRows(session) {
-    const currentOwn = new Set((session.players || [])
-        .filter(player => player.teamType === "own")
-        .map(player => String(player.playerName || "").toLowerCase()));
     const missing = (session.attendance?.missingPlayers || []).filter(Boolean);
-    const attended = (session.players || []).filter(player => player.teamType === "own");
+    const attended = ownPlayersForSession(session);
 
     return [
-        { values: ["Player", "Status", "Event Score", "Rank"], header: true },
+        { values: ["Player", "Status", "Event Points", "Score", "Rank"], header: true },
         ...attended.map(player => ({
             values: [
                 player.playerName,
-                currentOwn.has(String(player.playerName || "").toLowerCase()) ? "attended" : "unknown",
-                Number(player.points ?? player.score ?? 0) || 0,
+                "attended",
+                pointsValue(player) || "",
+                scoreValue(player) || "",
                 player.rank ?? ""
-            ]
+            ],
+            fill: OWN_COLOR
         })),
         ...missing.map(name => ({
-            values: [name, "missed", 0, ""],
-            fill: "#fee2e2"
+            values: [name, "missed", 0, 0, ""],
+            fill: ACCENT_RED
         }))
     ];
 }
@@ -342,43 +272,9 @@ function buildFods(session) {
 ${table("Summary", summaryRows(session))}
 ${table("Results", resultRows(session))}
 ${table("Attendance", attendanceWorkbookRows(session).map(item => row(item.values, item.header ? "HeaderCell" : "Cell")).join("\n"))}
-${table("Charts", chartRows(session))}
-${table("Raw Gemini", rawRows(session))}
 </office:spreadsheet>
 </office:body>
 </office:document>`;
-}
-
-function buildSvgChart(session) {
-    const stats = session.stats || {};
-    const values = [
-        { label: "Own pts", value: stats.ownPoints || 0, color: "#d9a300" },
-        { label: "Opp pts", value: stats.opponentPoints || 0, color: "#3b82f6" },
-        { label: "Own score", value: stats.ownScore || 0, color: "#f59e0b" },
-        { label: "Opp score", value: stats.opponentScore || 0, color: "#2563eb" }
-    ];
-    const max = Math.max(1, ...values.map(item => item.value));
-    const width = 900;
-    const height = 360;
-    const chartX = 160;
-    const chartWidth = 660;
-    const rowHeight = 60;
-    const bars = values.map((item, index) => {
-        const y = 58 + index * rowHeight;
-        const barWidth = Math.round((item.value / max) * chartWidth);
-        return [
-            `<text x="24" y="${y + 25}" font-family="Arial" font-size="20" fill="#111827">${escapeXml(item.label)}</text>`,
-            `<rect x="${chartX}" y="${y}" width="${barWidth}" height="34" fill="${item.color}" rx="4"/>`,
-            `<text x="${chartX + barWidth + 12}" y="${y + 25}" font-family="Arial" font-size="18" fill="#111827">${item.value}</text>`
-        ].join("");
-    }).join("");
-
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-<rect width="100%" height="100%" fill="#ffffff"/>
-<text x="24" y="32" font-family="Arial" font-size="24" font-weight="700" fill="#111827">${escapeXml(session.metadata?.title || "Race Summary")}</text>
-${bars}
-<text x="24" y="330" font-family="Arial" font-size="16" fill="#6b7280">Yellow = own team, blue = opponents. Generated from Gemini Flash extraction and corrections.</text>
-</svg>`;
 }
 
 function previewTextValue(value, maxLength = 28) {
@@ -389,85 +285,131 @@ function previewTextValue(value, maxLength = 28) {
     return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-function buildSpreadsheetPreviewSvg(session) {
-    const metadata = session.metadata || {};
-    const stats = session.stats || {};
-    const kabMap = sessionKabMap(session);
-    const columns = [
-        { label: "Rank", width: 70, value: player => player.rank ?? "" },
-        { label: "Player", width: 230, value: player => player.playerName || "" },
-        { label: "Team", width: 190, value: player => player.teamLabel || "" },
-        { label: "Event Pts", width: 120, value: player => player.points ?? "" },
-        { label: "Score", width: 125, value: player => player.score ?? "" },
-        { label: "#KAB", width: 80, value: player => kabMap.get(player.playerName) || 0 }
+function buildChartSvg(session) {
+    const summary = eventSummary(session);
+    const buckets = session.stats?.buckets || [];
+    const bars = [
+        { label: "Own score", value: summary.ownScore, color: "#0f766e" },
+        { label: "Enemy score", value: summary.opponentScore, color: "#2563eb" },
+        { label: "Own event pts", value: summary.ownPoints, color: "#d97706" },
+        { label: "Enemy event pts", value: summary.opponentPoints, color: "#7c3aed" }
     ];
-    const players = (session.players || []).slice(0, 18);
-    const rowHeight = 38;
+    const max = Math.max(1, ...bars.map(item => item.value));
+    const width = 1180;
+    const height = 620;
+    const chartX = 210;
+    const chartWidth = 830;
+    const rowHeight = 58;
+    const barRows = bars.map((item, index) => {
+        const y = 112 + index * rowHeight;
+        const barWidth = Math.round((item.value / max) * chartWidth);
+        return [
+            `<text x="36" y="${y + 25}" font-family="Arial" font-size="20" fill="#111827">${escapeXml(item.label)}</text>`,
+            `<rect x="${chartX}" y="${y}" width="${Math.max(2, barWidth)}" height="34" fill="${item.color}" rx="5"/>`,
+            `<text x="${Math.min(chartX + barWidth + 12, width - 110)}" y="${y + 25}" font-family="Arial" font-size="18" fill="#111827">${item.value}</text>`
+        ].join("");
+    }).join("\n");
+    const bucketMax = Math.max(1, ...buckets.flatMap(bucket => [bucket.own || 0, bucket.opponents || 0]));
+    const bucketRows = buckets.map((bucket, index) => {
+        const x = 105 + index * 250;
+        const ownHeight = Math.round(((bucket.own || 0) / bucketMax) * 120);
+        const opponentHeight = Math.round(((bucket.opponents || 0) / bucketMax) * 120);
+        return [
+            `<text x="${x}" y="556" font-family="Arial" font-size="17" text-anchor="middle" fill="#111827">${escapeXml(bucket.label)}</text>`,
+            `<rect x="${x - 44}" y="${520 - ownHeight}" width="38" height="${ownHeight}" fill="#f59e0b" rx="4"/>`,
+            `<rect x="${x + 8}" y="${520 - opponentHeight}" width="38" height="${opponentHeight}" fill="#2563eb" rx="4"/>`,
+            `<text x="${x - 25}" y="${500 - ownHeight}" font-family="Arial" font-size="14" text-anchor="middle" fill="#111827">${bucket.own || 0}</text>`,
+            `<text x="${x + 27}" y="${500 - opponentHeight}" font-family="Arial" font-size="14" text-anchor="middle" fill="#111827">${bucket.opponents || 0}</text>`
+        ].join("");
+    }).join("\n");
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<rect x="0" y="0" width="${width}" height="76" fill="${TITLE_COLOR}"/>
+<text x="34" y="32" font-family="Arial" font-size="24" font-weight="700" fill="#ffffff">${escapeXml(previewTextValue(summary.eventName, 64))}</text>
+<text x="34" y="58" font-family="Arial" font-size="16" fill="#d1fae5">${escapeXml(summary.teamName)} vs ${escapeXml(summary.opponentTeams.join(", "))}</text>
+${barRows}
+<text x="36" y="370" font-family="Arial" font-size="22" font-weight="700" fill="#111827">Placement buckets</text>
+<text x="36" y="402" font-family="Arial" font-size="15" fill="#64748b">Orange bars are own drivers. Blue bars are enemy drivers.</text>
+<line x1="60" y1="520" x2="1080" y2="520" stroke="#cbd5e1"/>
+${bucketRows}
+</svg>`;
+}
+
+function buildSpreadsheetImageSvg(session) {
+    const summary = eventSummary(session);
+    const columns = [
+        { label: "Rank", width: 70, value: item => item.values[0] },
+        { label: "Player", width: 250, value: item => item.values[1] },
+        { label: "Team", width: 210, value: item => item.values[2] },
+        { label: "Type", width: 110, value: item => item.values[3] },
+        { label: "Pts", width: 90, value: item => item.values[4] },
+        { label: "Score", width: 120, value: item => item.values[5] },
+        { label: "Blues", width: 90, value: item => item.values[6] },
+        { label: "Blue %", width: 90, value: item => item.values[7] },
+        { label: "#KAB", width: 80, value: item => item.values[8] }
+    ];
+    const rows = playerDisplayRows(session);
+    const rowHeight = 34;
     const margin = 28;
-    const titleHeight = 132;
+    const titleHeight = 156;
     const tableWidth = columns.reduce((total, column) => total + column.width, 0);
     const width = tableWidth + margin * 2;
-    const height = titleHeight + rowHeight * (players.length + 2) + 76;
-    const eventName = metadata.title || metadata.eventName || "Team Event Spreadsheet";
-    const teamName = metadata.ownTeamName || session.teamName || session.teamId || "Team";
-    const generated = new Date(session.processedAt || session.updatedAt || Date.now()).toLocaleString("en-US", {
-        timeZone: "UTC",
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit"
-    });
+    const height = titleHeight + rowHeight * (rows.length + 1) + 62;
 
     let x = margin;
     const headerCells = columns.map(column => {
-        const cell = `<rect x="${x}" y="${titleHeight}" width="${column.width}" height="${rowHeight}" fill="${HEADER_COLOR}" stroke="#111827"/>
-<text x="${x + 10}" y="${titleHeight + 25}" font-family="Arial" font-size="15" font-weight="700" fill="#ffffff">${escapeXml(column.label)}</text>`;
+        const cellSvg = `<rect x="${x}" y="${titleHeight}" width="${column.width}" height="${rowHeight}" fill="${HEADER_COLOR}" stroke="#111827"/>
+<text x="${x + 10}" y="${titleHeight + 23}" font-family="Arial" font-size="14" font-weight="700" fill="#ffffff">${escapeXml(column.label)}</text>`;
         x += column.width;
-        return cell;
+        return cellSvg;
     }).join("\n");
 
-    const bodyRows = (players.length ? players : [{ playerName: "No parsed rows", teamType: "opponent" }]).map((player, rowIndex) => {
+    const bodyRows = rows.map((item, rowIndex) => {
         const y = titleHeight + rowHeight * (rowIndex + 1);
-        const fill = player.teamType === "own" ? OWN_COLOR : rowIndex % 2 === 0 ? "#ffffff" : "#f8fafc";
+        const fill = item.own ? OWN_COLOR : rowIndex % 2 === 0 ? "#ffffff" : "#f8fafc";
         let cellX = margin;
         const cells = columns.map(column => {
-            const text = previewTextValue(column.value(player));
-            const cell = `<rect x="${cellX}" y="${y}" width="${column.width}" height="${rowHeight}" fill="${fill}" stroke="#d1d5db"/>
-<text x="${cellX + 10}" y="${y + 24}" font-family="Arial" font-size="14" fill="#111827">${escapeXml(text)}</text>`;
+            const text = previewTextValue(column.value(item), column.width > 180 ? 30 : 16);
+            const cellSvg = `<rect x="${cellX}" y="${y}" width="${column.width}" height="${rowHeight}" fill="${fill}" stroke="#d1d5db"/>
+<text x="${cellX + 10}" y="${y + 22}" font-family="Arial" font-size="13" fill="#111827">${escapeXml(text)}</text>`;
             cellX += column.width;
-            return cell;
+            return cellSvg;
         }).join("\n");
         return cells;
     }).join("\n");
 
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <rect width="100%" height="100%" fill="#ffffff"/>
-<rect x="0" y="0" width="${width}" height="104" fill="#0f766e"/>
-<text x="${margin}" y="38" font-family="Arial" font-size="24" font-weight="700" fill="#ffffff">${escapeXml(previewTextValue(eventName, 54))}</text>
-<text x="${margin}" y="68" font-family="Arial" font-size="15" fill="#d1fae5">${escapeXml(teamName)} - ${stats.totalPlayers || 0} parsed player(s) - Generated ${escapeXml(generated)} UTC</text>
-<text x="${margin}" y="94" font-family="Arial" font-size="14" fill="#d1fae5">Own points ${stats.ownPoints || 0} vs opponents ${stats.opponentPoints || 0}; own score ${stats.ownScore || 0} vs opponents ${stats.opponentScore || 0}</text>
+<rect x="0" y="0" width="${width}" height="118" fill="${TITLE_COLOR}"/>
+<text x="${margin}" y="38" font-family="Arial" font-size="25" font-weight="700" fill="#ffffff">${escapeXml(previewTextValue(summary.eventName, 64))}</text>
+<text x="${margin}" y="70" font-family="Arial" font-size="16" fill="#d1fae5">${escapeXml(summary.teamName)} vs ${escapeXml(summary.opponentTeams.join(", "))}</text>
+<text x="${margin}" y="98" font-family="Arial" font-size="15" fill="#d1fae5">Own drivers ${summary.ownPlayers.length}; enemy drivers ${summary.opponentCount}; #KAB ${summary.kabCount}; own score ${summary.ownScore}; enemy score ${summary.opponentScore}</text>
 ${headerCells}
 ${bodyRows}
-<text x="${margin}" y="${height - 30}" font-family="Arial" font-size="13" fill="#64748b">Preview image generated from the final spreadsheet data. The XLSX attachment is the source of truth.</text>
 </svg>`;
 }
 
-async function generateSpreadsheetPreviewImage(session, outputDir, baseName) {
-    const svg = buildSpreadsheetPreviewSvg(session);
-    const imagePath = path.join(outputDir, `${baseName}-spreadsheet-preview.png`);
-
+async function saveSvgAsPng(svg, outputPath) {
     try {
         const sharp = require("sharp");
-        await sharp(Buffer.from(svg)).png().toFile(imagePath);
-        if (fs.existsSync(imagePath)) return imagePath;
+        await sharp(Buffer.from(svg)).png().toFile(outputPath);
+        if (fs.existsSync(outputPath)) return outputPath;
     } catch {
-        // Fall back to an SVG attachment if image rasterization is unavailable.
+        // Keep a viewable fallback if rasterization is unavailable in the host.
     }
 
-    const svgPath = path.join(outputDir, `${baseName}-spreadsheet-preview.svg`);
+    const svgPath = outputPath.replace(/\.png$/i, ".svg");
     await fs.promises.writeFile(svgPath, svg, "utf8");
     return svgPath;
+}
+
+async function generateChartImage(session, outputDir, baseName) {
+    return saveSvgAsPng(buildChartSvg(session), path.join(outputDir, `${baseName}-summary-chart.png`));
+}
+
+async function generateSpreadsheetImage(session, outputDir, baseName) {
+    return saveSvgAsPng(buildSpreadsheetImageSvg(session), path.join(outputDir, `${baseName}-spreadsheet.png`));
 }
 
 async function convertWithLibreOffice(fodsPath, outputDir, settings = {}) {
@@ -492,14 +434,15 @@ function excelColor(hex) {
 }
 
 function styleExcelRow(row, options = {}) {
-    row.eachCell({ includeEmpty: true }, cell => {
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         cell.border = {
             top: { style: "thin", color: { argb: "FFD1D5DB" } },
             left: { style: "thin", color: { argb: "FFD1D5DB" } },
             bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
             right: { style: "thin", color: { argb: "FFD1D5DB" } }
         };
-        cell.alignment = { vertical: "top", wrapText: true };
+        cell.alignment = { vertical: "middle", horizontal: colNumber === 2 ? "left" : "center", wrapText: true };
+        cell.font = { name: "Aptos", size: 11, color: { argb: "FF111827" } };
 
         if (options.header) {
             cell.fill = {
@@ -507,7 +450,7 @@ function styleExcelRow(row, options = {}) {
                 pattern: "solid",
                 fgColor: { argb: excelColor(HEADER_COLOR) }
             };
-            cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+            cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFFFF" } };
         } else if (options.fill) {
             cell.fill = {
                 type: "pattern",
@@ -516,6 +459,12 @@ function styleExcelRow(row, options = {}) {
             };
         }
     });
+
+    if (options.kab) {
+        const cell = row.getCell(row.cellCount);
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: excelColor(KAB_COLOR) } };
+        cell.font = { name: "Aptos", bold: true, color: { argb: "FFFFFFFF" } };
+    }
 }
 
 function addWorksheetRows(worksheet, rows) {
@@ -525,11 +474,11 @@ function addWorksheetRows(worksheet, rows) {
     }
 
     worksheet.views = [{ state: "frozen", ySplit: 1 }];
-    worksheet.columns.forEach(column => {
-        let width = 12;
-        column.eachCell({ includeEmpty: true }, cell => {
-            const text = String(cell.value ?? "");
-            width = Math.max(width, Math.min(48, text.length + 2));
+    worksheet.columns.forEach((column, index) => {
+        let width = index === 1 ? 22 : 12;
+        column.eachCell({ includeEmpty: true }, cellRef => {
+            const text = String(cellRef.value ?? "");
+            width = Math.max(width, Math.min(index === 1 ? 34 : 22, text.length + 2));
         });
         column.width = width;
     });
@@ -545,8 +494,6 @@ async function generateXlsxWithExcelJs(session, outputDir, baseName) {
     addWorksheetRows(workbook.addWorksheet("Summary"), summaryWorkbookRows(session));
     addWorksheetRows(workbook.addWorksheet("Results"), resultWorkbookRows(session));
     addWorksheetRows(workbook.addWorksheet("Attendance"), attendanceWorkbookRows(session));
-    addWorksheetRows(workbook.addWorksheet("Charts"), chartWorkbookRows(session));
-    addWorksheetRows(workbook.addWorksheet("Raw Gemini"), rawWorkbookRows(session));
 
     const xlsxPath = path.join(outputDir, `${baseName}.xlsx`);
     await workbook.xlsx.writeFile(xlsxPath);
@@ -558,13 +505,12 @@ async function generateXlsxWithExcelJs(session, outputDir, baseName) {
 
 async function generateSpreadsheetArtifacts(session, outputDir, settings = {}) {
     await fs.promises.mkdir(outputDir, { recursive: true });
-    const baseName = `${session.teamId || "team"}-${session.id}`;
+    const baseName = `${safeFileName(session.teamId || "team")}-${safeFileName(session.id || "session")}`;
     const fodsPath = path.join(outputDir, `${baseName}.fods`);
-    const chartPath = path.join(outputDir, `${baseName}-summary.svg`);
+    const chartPath = await generateChartImage(session, outputDir, baseName);
+    const spreadsheetImagePath = await generateSpreadsheetImage(session, outputDir, baseName);
 
     await fs.promises.writeFile(fodsPath, buildFods(session), "utf8");
-    await fs.promises.writeFile(chartPath, buildSvgChart(session), "utf8");
-    const spreadsheetImagePath = await generateSpreadsheetPreviewImage(session, outputDir, baseName);
 
     let spreadsheetPath = fodsPath;
     let conversionError = "";

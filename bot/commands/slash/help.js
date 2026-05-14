@@ -26,7 +26,7 @@ module.exports = {
                 },
                 {
                     name: "Gemini Output And Files",
-                    value: "Normal event output posts only the final `.xlsx` plus a generated spreadsheet preview image to the configured output channel. Event names come from visible screenshot titles. Raw Gemini data is kept temporarily for audit and cleaned by retention."
+                    value: "Normal event output posts the final `.xlsx`, a full spreadsheet image, and a chart image to the configured output channel. Event names come from visible screenshot titles. Raw Gemini data is kept temporarily for audit and cleaned by retention."
                 },
                 {
                     name: "#KAB And Missed Events",

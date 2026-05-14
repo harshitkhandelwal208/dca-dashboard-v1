@@ -2,13 +2,35 @@ const fs = require("fs");
 const path = require("path");
 const { AttachmentBuilder, EmbedBuilder } = require("discord.js");
 const { listSpreadsheetSessions } = require("./spreadsheetStore");
+const {
+    blueKillPercent,
+    bluesKilledForRank,
+    cleanText,
+    eventMaxPoints,
+    eventMaxScore,
+    eventNameForSession,
+    normalizeKey,
+    opponentCount,
+    ownPlayersForSession,
+    playerKey,
+    pointsValue,
+    scoreValue,
+    sessionDate,
+    sessionKabMap,
+    sessionOpponentTeams,
+    teamScoreFromMetadata,
+    topOpponentRank
+} = require("./spreadsheetMetrics");
 
 const HEADER_COLOR = "FF1F2937";
 const HEADER_TEXT = "FFFFFFFF";
+const TITLE_FILL = "FF0F766E";
 const OWN_FILL = "FFFFF2CC";
 const ALT_FILL = "FFEAF2FF";
 const KAB_FILL = "FF0F7DBA";
 const MISSED_FILL = "FFFEE2E2";
+const GOOD_FILL = "FFD9EAD3";
+const WARN_FILL = "FFFFF2CC";
 
 function safeFileName(value, fallback = "report") {
     const clean = String(value || fallback)
@@ -19,10 +41,13 @@ function safeFileName(value, fallback = "report") {
     return clean || fallback;
 }
 
-function sessionDate(session) {
-    const value = session.processedAt || session.updatedAt || session.createdAt || new Date().toISOString();
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? new Date() : date;
+function escapeXml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
 }
 
 function startOfUtcDay(date) {
@@ -64,164 +89,257 @@ function isoWeekNumber(date) {
     return String(Math.ceil((((target - yearStart) / 86400000) + 1) / 7)).padStart(2, "0");
 }
 
-function eventName(session, index, usedNames) {
-    const raw = session.metadata?.title || session.teamEventName || session.eventName || `Event ${index + 1}`;
-    let name = String(raw).replace(/\s+/g, " ").trim() || `Event ${index + 1}`;
-    if (name.length > 42) name = name.slice(0, 39).trimEnd() + "...";
+function samePeriod(session, bounds) {
+    const date = sessionDate(session);
+    return date >= bounds.start && date < bounds.end;
+}
 
-    const base = name;
+function findAnchorSession(sessions, bounds, anchorDate) {
+    const processed = sessions
+        .filter(session => session.status === "processed")
+        .filter(session => samePeriod(session, bounds))
+        .sort((a, b) => sessionDate(a) - sessionDate(b));
+    if (!processed.length) return null;
+
+    const anchor = new Date(anchorDate);
+    return processed
+        .slice()
+        .reverse()
+        .find(session => sessionDate(session) <= anchor) || processed[processed.length - 1];
+}
+
+function filterSessionsForReport(allSessions, period, bounds, anchorDate, options = {}) {
+    const processed = allSessions
+        .filter(session => session.status === "processed")
+        .filter(session => samePeriod(session, bounds))
+        .sort((a, b) => sessionDate(a) - sessionDate(b));
+
+    if (period !== "weekly") return processed;
+
+    const anchorSession = options.anchorSession || findAnchorSession(allSessions, bounds, anchorDate);
+    const anchorEvent = normalizeKey(options.eventName || eventNameForSession(anchorSession || {}));
+    if (!anchorEvent) return processed;
+
+    return processed.filter(session => normalizeKey(eventNameForSession(session)) === anchorEvent);
+}
+
+function collectEnemyTeams(events) {
+    const names = [];
+    const seen = new Set();
+
+    for (const event of events) {
+        for (const name of event.opponentTeams) {
+            const key = normalizeKey(name);
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            names.push(name);
+        }
+    }
+
+    return names.length ? names : ["Opponent"];
+}
+
+function eventLabel(session, index, usedLabels) {
+    const opponent = sessionOpponentTeams(session).join(", ");
+    const date = sessionDate(session).toISOString().slice(0, 10);
+    let label = `${date} vs ${opponent}`;
+    if (label.length > 48) label = `${label.slice(0, 45).trimEnd()}...`;
+    const base = label;
     let suffix = 2;
-    while (usedNames.has(name)) {
-        name = `${base} ${suffix}`;
+    while (usedLabels.has(label)) {
+        label = `${base} ${suffix}`;
         suffix += 1;
     }
-    usedNames.add(name);
-    return name;
-}
-
-function playerKey(name) {
-    return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function eventScore(player) {
-    const value = player?.points ?? player?.score ?? 0;
-    const number = Number(value);
-    return Number.isFinite(number) ? number : 0;
-}
-
-function eventMax(session) {
-    return Math.max(0, ...(session.players || []).map(eventScore));
-}
-
-function topOpponentRank(session) {
-    const opponents = (session.players || [])
-        .filter(player => player.teamType !== "own")
-        .map(player => Number(player.rank))
-        .filter(rank => Number.isFinite(rank));
-    return opponents.length ? Math.min(...opponents) : null;
-}
-
-function ownPlayersForSession(session) {
-    return (session.players || []).filter(player => player.teamType === "own");
+    usedLabels.add(label);
+    return label;
 }
 
 function buildReportModel(teamConfig, sessions, period, bounds, allSessions = sessions) {
-    const usedNames = new Set();
+    const usedLabels = new Set();
+    const eventName = period === "weekly"
+        ? eventNameForSession(sessions[0] || {}, "Team Event")
+        : "Multiple team events";
     const events = sessions.map((session, index) => ({
         id: session.id,
-        name: eventName(session, index, usedNames),
+        label: eventLabel(session, index, usedLabels),
+        eventName: eventNameForSession(session, `Event ${index + 1}`),
         date: sessionDate(session).toISOString().slice(0, 10),
-        max: eventMax(session),
+        opponentTeams: sessionOpponentTeams(session),
+        opponentCount: opponentCount(session),
         topOpponentRank: topOpponentRank(session),
+        maxScore: eventMaxScore(session),
+        maxPoints: eventMaxPoints(session),
+        ownTeamScore: teamScoreFromMetadata(session, "own"),
+        opponentTeamScore: teamScoreFromMetadata(session, "opponent"),
         session
     }));
+    const enemyTeams = collectEnemyTeams(events);
     const playerMap = new Map();
+
+    for (const alias of teamConfig.ownPlayerAliases || []) {
+        const key = playerKey(alias);
+        if (key && !playerMap.has(key)) {
+            playerMap.set(key, { name: alias });
+        }
+    }
 
     for (const session of allSessions.filter(item => item.status === "processed")) {
         for (const player of ownPlayersForSession(session)) {
             const key = playerKey(player.playerName);
-            if (!key || playerMap.has(key)) continue;
-            playerMap.set(key, {
-                name: player.playerName,
-                scores: Array(events.length).fill(0),
-                ranks: Array(events.length).fill(null),
-                attended: 0,
-                missed: 0,
-                kab: 0,
-                total: 0,
-                max: 0,
-                percent: 0
-            });
+            if (key && !playerMap.has(key)) playerMap.set(key, { name: player.playerName });
         }
     }
 
+    const rows = [...playerMap.entries()].map(([key, value]) => ({
+        key,
+        name: value.name,
+        events: events.map(event => ({
+            eventId: event.id,
+            label: event.label,
+            opponentTeams: event.opponentTeams,
+            rank: null,
+            score: 0,
+            points: 0,
+            bluesKilled: 0,
+            possibleBlues: event.opponentCount,
+            blueKillPercent: 0,
+            kab: 0
+        })),
+        attended: 0,
+        missed: events.length,
+        kab: 0,
+        totalScore: 0,
+        totalPoints: 0,
+        bluesKilled: 0,
+        possibleBlues: events.reduce((total, event) => total + event.opponentCount, 0),
+        blueKillPercent: 0,
+        bestRank: null
+    }));
+    const rowByKey = new Map(rows.map(row => [row.key, row]));
+
     events.forEach((event, eventIndex) => {
+        const kabMap = sessionKabMap(event.session);
         for (const player of ownPlayersForSession(event.session)) {
             const key = playerKey(player.playerName);
             if (!key) continue;
 
-            if (!playerMap.has(key)) {
-                playerMap.set(key, {
+            if (!rowByKey.has(key)) {
+                const next = {
+                    key,
                     name: player.playerName,
-                    scores: Array(events.length).fill(0),
-                    ranks: Array(events.length).fill(null),
+                    events: events.map(item => ({
+                        eventId: item.id,
+                        label: item.label,
+                        opponentTeams: item.opponentTeams,
+                        rank: null,
+                        score: 0,
+                        points: 0,
+                        bluesKilled: 0,
+                        possibleBlues: item.opponentCount,
+                        blueKillPercent: 0,
+                        kab: 0
+                    })),
                     attended: 0,
-                    missed: 0,
+                    missed: events.length,
                     kab: 0,
-                    total: 0,
-                    max: 0,
-                    percent: 0
-                });
+                    totalScore: 0,
+                    totalPoints: 0,
+                    bluesKilled: 0,
+                    possibleBlues: events.reduce((total, item) => total + item.opponentCount, 0),
+                    blueKillPercent: 0,
+                    bestRank: null
+                };
+                rowByKey.set(key, next);
+                rows.push(next);
             }
 
-            const row = playerMap.get(key);
-            const score = eventScore(player);
-            row.scores[eventIndex] = score;
-            row.ranks[eventIndex] = Number.isFinite(Number(player.rank)) ? Number(player.rank) : null;
+            const row = rowByKey.get(key);
+            const rank = Number.isFinite(Number(player.rank)) ? Number(player.rank) : null;
+            const killed = rank === null ? 0 : bluesKilledForRank(event.session, rank);
+            row.events[eventIndex] = {
+                ...row.events[eventIndex],
+                rank,
+                score: scoreValue(player),
+                points: pointsValue(player),
+                bluesKilled: killed,
+                possibleBlues: event.opponentCount,
+                blueKillPercent: blueKillPercent(killed, event.opponentCount),
+                kab: kabMap.get(player.playerName) || 0
+            };
         }
     });
 
-    const maxTotal = events.reduce((total, event) => total + event.max, 0);
-    const rows = [...playerMap.values()].map(row => {
-        row.total = row.scores.reduce((total, value) => total + value, 0);
-        row.max = maxTotal;
-        row.attended = row.ranks.filter(rank => rank !== null).length;
+    for (const row of rows) {
+        row.attended = row.events.filter(event => event.rank !== null).length;
         row.missed = Math.max(0, events.length - row.attended);
-        row.percent = row.max > 0 ? Math.round((row.total / row.max) * 100) : 0;
-        row.kab = events.reduce((total, event, index) => {
-            const rank = row.ranks[index];
-            if (rank === null) return total;
-            if (event.topOpponentRank !== null) {
-                return rank < event.topOpponentRank ? total + 1 : total;
-            }
-            return total;
-        }, 0);
-        return row;
-    }).sort((a, b) =>
-        b.total - a.total ||
+        row.kab = row.events.reduce((total, event) => total + event.kab, 0);
+        row.totalScore = row.events.reduce((total, event) => total + event.score, 0);
+        row.totalPoints = row.events.reduce((total, event) => total + event.points, 0);
+        row.bluesKilled = row.events.reduce((total, event) => total + event.bluesKilled, 0);
+        row.possibleBlues = row.events.reduce((total, event) => total + event.possibleBlues, 0);
+        row.blueKillPercent = blueKillPercent(row.bluesKilled, row.possibleBlues);
+        row.bestRank = row.events
+            .map(event => event.rank)
+            .filter(rank => rank !== null)
+            .sort((a, b) => a - b)[0] || null;
+    }
+
+    rows.sort((a, b) =>
+        b.totalScore - a.totalScore ||
+        b.totalPoints - a.totalPoints ||
+        b.bluesKilled - a.bluesKilled ||
         b.kab - a.kab ||
-        b.percent - a.percent ||
         a.name.localeCompare(b.name)
     );
 
     let rank = 0;
-    let previousTotal = null;
+    let previousScore = null;
+    let previousPoints = null;
     rows.forEach((row, index) => {
-        if (row.total !== previousTotal) rank = index + 1;
+        if (row.totalScore !== previousScore || row.totalPoints !== previousPoints) rank = index + 1;
         row.rank = rank;
-        previousTotal = row.total;
+        previousScore = row.totalScore;
+        previousPoints = row.totalPoints;
     });
+
+    const periodKey = period === "weekly"
+        ? `${bounds.key}-${safeFileName(eventName, "team-event").toLowerCase()}`
+        : bounds.key;
 
     return {
         teamId: teamConfig.id,
         teamName: teamConfig.name || teamConfig.id,
         period,
         periodLabel: bounds.label,
-        periodKey: bounds.key,
+        periodKey,
         start: bounds.start,
         end: bounds.end,
+        eventName,
+        enemyTeams,
         events,
         rows,
         totals: {
             events: events.length,
             players: rows.length,
-            maxTotal,
-            totalScores: rows.reduce((total, row) => total + row.total, 0),
+            totalScore: rows.reduce((total, row) => total + row.totalScore, 0),
+            totalPoints: rows.reduce((total, row) => total + row.totalPoints, 0),
             totalKab: rows.reduce((total, row) => total + row.kab, 0),
-            totalMissed: rows.reduce((total, row) => total + row.missed, 0)
+            totalMissed: rows.reduce((total, row) => total + row.missed, 0),
+            bluesKilled: rows.reduce((total, row) => total + row.bluesKilled, 0),
+            possibleBlues: rows.reduce((total, row) => total + row.possibleBlues, 0)
         }
     };
 }
 
 function styleCell(cell, options = {}) {
     cell.border = {
-        top: { style: "thin", color: { argb: "FF4F7FD9" } },
-        left: { style: "thin", color: { argb: "FF4F7FD9" } },
-        bottom: { style: "thin", color: { argb: "FF4F7FD9" } },
-        right: { style: "thin", color: { argb: "FF4F7FD9" } }
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } }
     };
     cell.alignment = { vertical: "middle", horizontal: options.horizontal || "center", wrapText: true };
-    cell.font = { name: "Georgia", size: options.size || 12, bold: Boolean(options.bold), color: { argb: options.color || "FF000000" } };
+    cell.font = { name: "Aptos", size: options.size || 11, bold: Boolean(options.bold), color: { argb: options.color || "FF111827" } };
 
     if (options.fill) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: options.fill } };
@@ -236,79 +354,94 @@ function addStyledRow(worksheet, values, options = {}) {
 
 function addReportSheet(workbook, model) {
     const sheet = workbook.addWorksheet("Report");
-    const statStart = 3 + model.events.length;
     const headers = [
-        "Rank",
-        "Name",
-        ...model.events.map(event => event.name),
-        "%kill",
-        "total",
-        "max",
+        "Driver Rank",
+        "Driver",
+        "Team Event",
+        "Enemy Team(s)",
+        "Best Rank",
+        "Score",
+        "Event Points",
+        "Blues Killed",
+        "Blue Kill %",
         "#KAB",
-        "missed",
-        "attended"
+        "Missed",
+        "Attended"
     ];
 
-    const titleRow = addStyledRow(sheet, [`${model.teamName} - ${model.period === "weekly" ? "Weekly" : "Monthly"} Report`, ...Array(headers.length - 1).fill("")], {
-        fill: "FFC6E0B4",
+    const title = `${model.teamName} ${model.period === "weekly" ? "Weekly" : "Monthly"} Report`;
+    const titleRow = addStyledRow(sheet, [title, ...Array(headers.length - 1).fill("")], {
+        fill: TITLE_FILL,
         bold: true,
-        color: "FF0070C0",
-        size: 20
+        color: HEADER_TEXT,
+        size: 18
     });
     sheet.mergeCells(titleRow.number, 1, titleRow.number, headers.length);
-
     addStyledRow(sheet, [
-        "Event max",
-        "",
-        ...model.events.map(event => event.max),
-        "",
-        "",
-        model.totals.maxTotal,
-        "",
+        "Team Event",
+        model.eventName,
+        "Enemy Team(s)",
+        model.enemyTeams.join(", "),
+        "Period",
+        model.periodLabel,
+        "Sessions",
+        model.events.length,
+        "Drivers",
+        model.rows.length,
         "",
         ""
-    ], { fill: "FFD9EAD3", bold: true });
+    ], { fill: GOOD_FILL, bold: true });
     addStyledRow(sheet, headers, { fill: HEADER_COLOR, color: HEADER_TEXT, bold: true });
 
     model.rows.forEach((entry, index) => {
-        const values = [
+        const row = addStyledRow(sheet, [
             entry.rank,
             entry.name,
-            ...entry.scores,
-            `${entry.percent} %`,
-            entry.total,
-            entry.max,
+            model.eventName,
+            model.enemyTeams.join(", "),
+            entry.bestRank || "",
+            entry.totalScore,
+            entry.totalPoints,
+            entry.bluesKilled,
+            `${entry.blueKillPercent}%`,
             entry.kab,
             entry.missed,
             entry.attended
-        ];
-        const row = addStyledRow(sheet, values, { fill: index % 2 === 0 ? ALT_FILL : "FFFFFFFF" });
-        row.getCell(2).alignment = { vertical: "middle", horizontal: "left", wrapText: true };
-
-        entry.scores.forEach((score, eventIndex) => {
-            const cell = row.getCell(3 + eventIndex);
-            if (entry.ranks[eventIndex] === null) {
-                cell.value = 0;
-                cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: MISSED_FILL } };
-            } else if (model.events[eventIndex].topOpponentRank !== null && entry.ranks[eventIndex] < model.events[eventIndex].topOpponentRank) {
-                cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: OWN_FILL } };
-            } else if (score >= model.events[eventIndex].max && model.events[eventIndex].max > 0) {
-                cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: OWN_FILL } };
-            }
+        ], {
+            fill: index % 2 === 0 ? ALT_FILL : "FFFFFFFF"
         });
-
-        row.getCell(statStart + 3).fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: entry.kab > 0 ? KAB_FILL : "FFDDEBF7" }
-        };
-        row.getCell(statStart + 3).font = { bold: true, color: { argb: entry.kab > 0 ? "FFFFFFFF" : "FF000000" } };
+        row.getCell(2).alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+        if (entry.rank <= 3) {
+            row.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: WARN_FILL } };
+            row.getCell(1).font = { bold: true, color: { argb: "FF111827" } };
+        }
+        if (entry.blueKillPercent >= 75) {
+            row.getCell(9).fill = { type: "pattern", pattern: "solid", fgColor: { argb: GOOD_FILL } };
+        }
+        if (entry.kab > 0) {
+            row.getCell(10).fill = { type: "pattern", pattern: "solid", fgColor: { argb: KAB_FILL } };
+            row.getCell(10).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        }
+        if (entry.missed > 0) {
+            row.getCell(11).fill = { type: "pattern", pattern: "solid", fgColor: { argb: MISSED_FILL } };
+        }
     });
 
-    sheet.views = [{ state: "frozen", xSplit: 2, ySplit: 3 }];
-    sheet.columns = headers.map((header, index) => ({
-        width: index === 1 ? 24 : Math.max(9, Math.min(18, String(header).length + 2))
-    }));
+    sheet.views = [{ state: "frozen", ySplit: 3 }];
+    sheet.columns = [
+        { width: 12 },
+        { width: 24 },
+        { width: 28 },
+        { width: 28 },
+        { width: 11 },
+        { width: 14 },
+        { width: 14 },
+        { width: 14 },
+        { width: 13 },
+        { width: 10 },
+        { width: 10 },
+        { width: 11 }
+    ];
 }
 
 function addDetailsSheet(workbook, model) {
@@ -317,15 +450,18 @@ function addDetailsSheet(workbook, model) {
     [
         ["Team", model.teamName],
         ["Period", model.periodLabel],
-        ["Events included", model.totals.events],
-        ["Players included", model.totals.players],
-        ["Max score", model.totals.maxTotal],
-        ["#KAB definition", "Count of events where the player ranked above every opponent. If no opponent rows were detected, #KAB is 0 for that event because opponent order cannot be proven."],
-        ["Missing event rule", "Missing players receive a score of 0 for that event and the full event max still counts against max."]
+        ["Team Event", model.eventName],
+        ["Enemy Team(s)", model.enemyTeams.join(", ")],
+        ["Sessions included", model.totals.events],
+        ["Drivers included", model.totals.players],
+        ["Total score", model.totals.totalScore],
+        ["Total event points", model.totals.totalPoints],
+        ["Blues killed", `${model.totals.bluesKilled}/${model.totals.possibleBlues}`],
+        ["Blue kill %", `${blueKillPercent(model.totals.bluesKilled, model.totals.possibleBlues)}%`]
     ].forEach(item => addStyledRow(sheet, item));
 
     sheet.addRow([]);
-    addStyledRow(sheet, ["Date", "Event name", "Session ID", "Max score", "Players parsed"], {
+    addStyledRow(sheet, ["Date", "Team Event", "Enemy Team(s)", "Own Team Score", "Enemy Team Score", "Enemy Drivers", "Max Score", "Max Event Points", "Session ID"], {
         fill: HEADER_COLOR,
         color: HEADER_TEXT,
         bold: true
@@ -333,20 +469,157 @@ function addDetailsSheet(workbook, model) {
     for (const event of model.events) {
         addStyledRow(sheet, [
             event.date,
-            event.name,
-            event.id,
-            event.max,
-            event.session.players?.length || 0
+            event.eventName,
+            event.opponentTeams.join(", "),
+            event.ownTeamScore || "",
+            event.opponentTeamScore || "",
+            event.opponentCount,
+            event.maxScore,
+            event.maxPoints,
+            event.id
         ]);
     }
 
+    sheet.addRow([]);
+    addStyledRow(sheet, ["Driver", "Date", "Enemy Team(s)", "Rank", "Score", "Event Points", "Blues Killed", "Blue Kill %", "#KAB"], {
+        fill: HEADER_COLOR,
+        color: HEADER_TEXT,
+        bold: true
+    });
+    for (const row of model.rows) {
+        for (const event of row.events) {
+            addStyledRow(sheet, [
+                row.name,
+                model.events.find(item => item.id === event.eventId)?.date || "",
+                event.opponentTeams.join(", "),
+                event.rank || "",
+                event.score,
+                event.points,
+                event.bluesKilled,
+                `${event.blueKillPercent}%`,
+                event.kab
+            ], {
+                fill: event.rank === null ? MISSED_FILL : event.kab ? OWN_FILL : ""
+            });
+        }
+    }
+
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
     sheet.columns = [
-        { width: 18 },
-        { width: 42 },
+        { width: 22 },
+        { width: 14 },
         { width: 28 },
+        { width: 10 },
+        { width: 14 },
+        { width: 14 },
+        { width: 14 },
         { width: 12 },
-        { width: 14 }
+        { width: 10 }
     ];
+}
+
+function previewTextValue(value, maxLength = 28) {
+    const text = String(value ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function buildReportChartSvg(model) {
+    const rows = model.rows.slice(0, 12);
+    const maxScore = Math.max(1, ...rows.map(row => row.totalScore || row.totalPoints || 0));
+    const width = 1200;
+    const height = 160 + rows.length * 44 + 110;
+    const chartX = 280;
+    const chartWidth = 680;
+    const rowSvgs = rows.map((row, index) => {
+        const y = 130 + index * 44;
+        const value = row.totalScore || row.totalPoints || 0;
+        const barWidth = Math.round((value / maxScore) * chartWidth);
+        const fill = row.blueKillPercent >= 75 ? "#0f766e" : row.blueKillPercent >= 40 ? "#d97706" : "#2563eb";
+        return [
+            `<text x="34" y="${y + 23}" font-family="Arial" font-size="17" fill="#111827">#${row.rank} ${escapeXml(previewTextValue(row.name, 24))}</text>`,
+            `<rect x="${chartX}" y="${y}" width="${Math.max(2, barWidth)}" height="28" fill="${fill}" rx="5"/>`,
+            `<text x="${chartX + barWidth + 12}" y="${y + 21}" font-family="Arial" font-size="15" fill="#111827">${value}</text>`,
+            `<text x="1000" y="${y + 21}" font-family="Arial" font-size="15" fill="#111827">${row.bluesKilled}/${row.possibleBlues} blues (${row.blueKillPercent}%)</text>`
+        ].join("");
+    }).join("\n");
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<rect width="${width}" height="86" fill="#0f766e"/>
+<text x="34" y="34" font-family="Arial" font-size="25" font-weight="700" fill="#ffffff">${escapeXml(model.teamName)} ${model.period === "weekly" ? "Weekly" : "Monthly"} Report</text>
+<text x="34" y="62" font-family="Arial" font-size="16" fill="#d1fae5">${escapeXml(model.eventName)} vs ${escapeXml(model.enemyTeams.join(", "))}</text>
+<text x="34" y="112" font-family="Arial" font-size="18" font-weight="700" fill="#111827">Top driver scores and blue kills</text>
+${rowSvgs}
+</svg>`;
+}
+
+function buildReportTableSvg(model) {
+    const columns = [
+        { label: "Rank", width: 70, value: row => row.rank },
+        { label: "Driver", width: 250, value: row => row.name },
+        { label: "Enemy", width: 230, value: () => model.enemyTeams.join(", ") },
+        { label: "Best", width: 70, value: row => row.bestRank || "" },
+        { label: "Score", width: 120, value: row => row.totalScore },
+        { label: "Pts", width: 90, value: row => row.totalPoints },
+        { label: "Blues", width: 100, value: row => `${row.bluesKilled}/${row.possibleBlues}` },
+        { label: "Blue %", width: 90, value: row => `${row.blueKillPercent}%` },
+        { label: "#KAB", width: 80, value: row => row.kab }
+    ];
+    const rows = model.rows;
+    const rowHeight = 34;
+    const margin = 28;
+    const titleHeight = 150;
+    const tableWidth = columns.reduce((total, column) => total + column.width, 0);
+    const width = tableWidth + margin * 2;
+    const height = titleHeight + rowHeight * (rows.length + 1) + 48;
+
+    let x = margin;
+    const header = columns.map(column => {
+        const svg = `<rect x="${x}" y="${titleHeight}" width="${column.width}" height="${rowHeight}" fill="#1f2937" stroke="#111827"/>
+<text x="${x + 9}" y="${titleHeight + 23}" font-family="Arial" font-size="14" font-weight="700" fill="#ffffff">${escapeXml(column.label)}</text>`;
+        x += column.width;
+        return svg;
+    }).join("\n");
+
+    const body = rows.map((row, index) => {
+        const y = titleHeight + rowHeight * (index + 1);
+        const fill = row.kab > 0 ? "#fff2cc" : index % 2 === 0 ? "#ffffff" : "#f8fafc";
+        let cellX = margin;
+        return columns.map(column => {
+            const text = previewTextValue(column.value(row), column.width > 180 ? 28 : 14);
+            const svg = `<rect x="${cellX}" y="${y}" width="${column.width}" height="${rowHeight}" fill="${fill}" stroke="#d1d5db"/>
+<text x="${cellX + 9}" y="${y + 22}" font-family="Arial" font-size="13" fill="#111827">${escapeXml(text)}</text>`;
+            cellX += column.width;
+            return svg;
+        }).join("\n");
+    }).join("\n");
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<rect width="${width}" height="112" fill="#0f766e"/>
+<text x="${margin}" y="38" font-family="Arial" font-size="25" font-weight="700" fill="#ffffff">${escapeXml(model.teamName)} ${model.period === "weekly" ? "Weekly" : "Monthly"} Report</text>
+<text x="${margin}" y="70" font-family="Arial" font-size="16" fill="#d1fae5">${escapeXml(model.eventName)}</text>
+<text x="${margin}" y="98" font-family="Arial" font-size="15" fill="#d1fae5">Enemy team(s): ${escapeXml(model.enemyTeams.join(", "))}</text>
+${header}
+${body}
+</svg>`;
+}
+
+async function saveSvgAsPng(svg, outputPath) {
+    try {
+        const sharp = require("sharp");
+        await sharp(Buffer.from(svg)).png().toFile(outputPath);
+        if (fs.existsSync(outputPath)) return outputPath;
+    } catch {
+        // Keep a viewable fallback if rasterization is unavailable in the host.
+    }
+
+    const svgPath = outputPath.replace(/\.png$/i, ".svg");
+    await fs.promises.writeFile(svgPath, svg, "utf8");
+    return svgPath;
 }
 
 async function writeReportWorkbook(model, outputDir) {
@@ -360,39 +633,33 @@ async function writeReportWorkbook(model, outputDir) {
     addReportSheet(workbook, model);
     addDetailsSheet(workbook, model);
 
-    const fileName = `${safeFileName(model.teamId)}-${model.period}-${model.periodKey}.xlsx`;
-    const filePath = path.join(outputDir, fileName);
+    const baseName = `${safeFileName(model.teamId)}-${model.period}-${model.periodKey}`;
+    const filePath = path.join(outputDir, `${baseName}.xlsx`);
     await workbook.xlsx.writeFile(filePath);
-    return filePath;
+    const chartPath = await saveSvgAsPng(buildReportChartSvg(model), path.join(outputDir, `${baseName}-chart.png`));
+    const tableImagePath = await saveSvgAsPng(buildReportTableSvg(model), path.join(outputDir, `${baseName}-drivers.png`));
+
+    return { filePath, chartPath, tableImagePath };
 }
 
 function outputDirFor(teamConfig) {
     return path.join(__dirname, "..", "data", "spreadsheets", safeFileName(teamConfig.id, "team"), "reports");
 }
 
-function filterSessionsForPeriod(sessions, bounds) {
-    return sessions
-        .filter(session => session.status === "processed")
-        .filter(session => {
-            const date = sessionDate(session);
-            return date >= bounds.start && date < bounds.end;
-        })
-        .sort((a, b) => sessionDate(a) - sessionDate(b));
-}
-
 async function generatePeriodReport(teamConfig, period, options = {}) {
     const anchor = options.anchorDate ? new Date(options.anchorDate) : new Date();
-    const bounds = periodBounds(period, Number.isNaN(anchor.getTime()) ? new Date() : anchor);
+    const anchorDate = Number.isNaN(anchor.getTime()) ? new Date() : anchor;
+    const bounds = periodBounds(period, anchorDate);
     const allSessions = options.sessions || await listSpreadsheetSessions({ teamId: teamConfig.id });
-    const sessions = filterSessionsForPeriod(allSessions, bounds);
+    const sessions = filterSessionsForReport(allSessions, period, bounds, anchorDate, options);
     if (!sessions.length) return null;
 
     const model = buildReportModel(teamConfig, sessions, period, bounds, allSessions);
-    const filePath = await writeReportWorkbook(model, outputDirFor(teamConfig));
+    const outputs = await writeReportWorkbook(model, options.outputDir || outputDirFor(teamConfig));
 
     return {
         ...model,
-        filePath
+        ...outputs
     };
 }
 
@@ -409,33 +676,40 @@ async function generateStandardPeriodReports(teamConfig, anchorSession) {
     return reports;
 }
 
+function attachmentFor(filePath) {
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    return new AttachmentBuilder(filePath, { name: path.basename(filePath) });
+}
+
 function reportAttachment(report) {
-    if (!report?.filePath || !fs.existsSync(report.filePath)) return null;
-    return new AttachmentBuilder(report.filePath, {
-        name: path.basename(report.filePath)
-    });
+    return attachmentFor(report?.filePath);
+}
+
+function reportAttachments(report) {
+    return [
+        attachmentFor(report?.filePath),
+        attachmentFor(report?.tableImagePath),
+        attachmentFor(report?.chartPath)
+    ].filter(Boolean);
 }
 
 function buildPeriodReportEmbed(report) {
     const topRows = report.rows.slice(0, 8).map(row =>
-        `#${row.rank} ${row.name} - ${row.total}/${row.max} (${row.percent}%), #KAB ${row.kab}, missed ${row.missed}`
+        `#${row.rank} ${row.name} - score ${row.totalScore}, pts ${row.totalPoints}, blues ${row.bluesKilled}/${row.possibleBlues} (${row.blueKillPercent}%), #KAB ${row.kab}`
     );
-    const eventNames = report.events.map(event => `${event.date}: ${event.name}`);
 
     return new EmbedBuilder()
         .setTitle(`${report.teamName} ${report.period === "weekly" ? "Weekly" : "Monthly"} Report`)
         .setColor(0x0f7dba)
         .setDescription([
             `Period: **${report.periodLabel}**`,
-            `Events: **${report.totals.events}** | Players: **${report.totals.players}** | #KAB total: **${report.totals.totalKab}**`,
+            `Team event: **${cleanText(report.eventName, "Team Event", 120)}**`,
+            `Enemy team(s): **${report.enemyTeams.join(", ")}**`,
+            `Sessions: **${report.totals.events}** | Drivers: **${report.totals.players}** | Blues killed: **${report.totals.bluesKilled}/${report.totals.possibleBlues}**`,
             "",
-            "**Top performers**",
-            topRows.length ? topRows.join("\n") : "No players found.",
-            "",
-            "**Team events**",
-            eventNames.slice(0, 12).join("\n") || "No event names found."
+            "**Top drivers**",
+            topRows.length ? topRows.join("\n") : "No drivers found."
         ].join("\n").slice(0, 4000))
-        .setFooter({ text: "#KAB counts events where the player ranked above every opponent. Missed events score 0." })
         .setTimestamp(new Date());
 }
 
@@ -445,5 +719,6 @@ module.exports = {
     generatePeriodReport,
     generateStandardPeriodReports,
     periodBounds,
-    reportAttachment
+    reportAttachment,
+    reportAttachments
 };

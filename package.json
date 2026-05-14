@@ -6,6 +6,7 @@
   "scripts": {
     "start:bot": "npm --prefix bot start",
     "start:dashboard": "npm --prefix dashboard start",
-    "deploy:commands": "npm --prefix bot run deploy:commands"
+    "deploy:commands": "npm --prefix bot run deploy:commands",
+    "test:spreadsheets": "npm --prefix bot run test:spreadsheets"
   }
 }
