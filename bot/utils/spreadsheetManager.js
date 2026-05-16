@@ -346,9 +346,9 @@ async function processSpreadsheetSession(client, sessionId, options = {}) {
                 ...config.spreadsheets,
                 teamConfig: extractionTeamConfig
             });
-            parsed = parseRaceScreenshots(ocrResults, extractionTeamConfig);
+            parsed = await parseRaceScreenshots(ocrResults, extractionTeamConfig);
         } else {
-            parsed = parseRaceScreenshots(ocrResults, extractionTeamConfig);
+            parsed = await parseRaceScreenshots(ocrResults, extractionTeamConfig);
         }
 
         parsed = applyCorrections(parsed, session.corrections || []);
@@ -404,7 +404,7 @@ async function rebuildSpreadsheetSession(client, sessionId) {
     const extractionTeamConfig = await teamConfigWithKnownRoster(teamConfig, session.id);
     const parsed = applyCorrections(
         session.ocrResults?.length
-            ? parseRaceScreenshots(session.ocrResults, extractionTeamConfig)
+            ? await parseRaceScreenshots(session.ocrResults, extractionTeamConfig)
             : {
                 metadata: session.metadata || {},
                 players: session.players || [],
@@ -680,7 +680,7 @@ async function previewSpreadsheetSession(sessionId, options = {}) {
             });
         }
 
-        const parsed = applyCorrections(parseRaceScreenshots(ocrResults, extractionTeamConfig), session.corrections || []);
+        const parsed = applyCorrections(await parseRaceScreenshots(ocrResults, extractionTeamConfig), session.corrections || []);
         return attachAttendanceSnapshot({
             ...session,
             status: "preview",

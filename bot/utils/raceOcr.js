@@ -1,6 +1,10 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const {
+    annotateOcrImageSizes,
+    classifyPlayersByRowBackground
+} = require("./rowBackgroundClassifier");
 
 const DEFAULT_TIMEOUT_MS = 300000;
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
@@ -114,12 +118,51 @@ function extractTrailingScore(value) {
     };
 }
 
+function eventPointsFromPrefixNumbers(prefixNumbers) {
+    const values = prefixNumbers
+        .map(value => parseNumber(value))
+        .filter(value => value !== null);
+    if (!values.length) return null;
+
+    const eventPointCandidates = values.filter(value => value >= 20 && value <= 500);
+    if (eventPointCandidates.length) {
+        return eventPointCandidates[eventPointCandidates.length - 1];
+    }
+
+    const last = values[values.length - 1];
+    return last >= 100 ? last : null;
+}
+
+function parseEventPointsFromLeaderboardText(text) {
+    const normalized = String(text || "")
+        .replace(/[|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!normalized) return null;
+
+    const inline = normalized.match(/(?:^|\s)(\d{1,3})\s+(\d{1,3})\s*[.)]\s+/);
+    if (inline) {
+        const points = parseNumber(inline[1]);
+        const rank = Number.parseInt(inline[2], 10);
+        if (points !== null && Number.isInteger(rank) && rank >= 1 && rank <= 100) {
+            return points;
+        }
+    }
+
+    const rankMatch = normalized.match(/(?:^|\s)(\d{1,3})\s*[.)]\s+/);
+    if (!rankMatch || rankMatch.index <= 0) return null;
+
+    const prefix = normalized.slice(0, rankMatch.index).trim();
+    const prefixNumbers = prefix.match(/\d+(?:[,.]\d+)?/g) || [];
+    return eventPointsFromPrefixNumbers(prefixNumbers);
+}
+
 function parsePlacementLine(line) {
     const text = String(line || "")
         .replace(/[|]+/g, " ")
         .replace(/\s+/g, " ")
         .trim();
-    const rankMatch = text.match(/(?:^|\s)(\d{1,2})\s*[\.)]\s+(.+)$/);
+    const rankMatch = text.match(/(?:^|\s)(\d{1,3})\s*[\.)]\s+(.+)$/);
     if (!rankMatch) return null;
 
     const rank = Number.parseInt(rankMatch[1], 10);
@@ -127,7 +170,7 @@ function parsePlacementLine(line) {
 
     const prefix = text.slice(0, rankMatch.index).trim();
     const prefixNumbers = prefix.match(/\d+(?:[,.]\d+)?/g) || [];
-    const points = prefixNumbers.length ? parseNumber(prefixNumbers[prefixNumbers.length - 1]) : null;
+    const points = eventPointsFromPrefixNumbers(prefixNumbers);
     const scoreData = extractTrailingScore(rankMatch[2]);
     const name = escapeNameArtifacts(scoreData.rest);
 
@@ -406,11 +449,20 @@ function buildTeamEventPrompt(teamConfig = {}) {
         "- Identify the event name from the screenshots. Use the visible event title, not the Discord channel name.",
         "- Extract every visible ranking/player row, even from cropped screenshots or tablet screenshots.",
         "- Preserve placements/ranks exactly. Tied ranks are allowed.",
-        "- Extract event points/cup points separately from total score when both are visible.",
+        "- Extract each player's team event points separately from their total score.",
+        "- On leaderboard rows, points is the player's team event points (cup points) shown left of the rank, often 100-350. score is the large total on the right.",
+        "- Always populate points for every leaderboard row when that number is visible. Do not put team event points into score.",
+        "- When a team score summary, versus, or final results screen is visible, extract each team's total team event score.",
+        "- Put aggregate team totals in metadata.ownTeamScore and metadata.opponentTeamScore, and also in teams[] with the visible team name and score.",
+        "- Team event score means the team's combined event total shown on summary screens (for example Discord 2866 vs MIDGARD 1654), not an individual player's rank score.",
         "- For scores with spaces, output the numeric value without spaces, for example '52 723' becomes 52723.",
-        "- Classify each row as own, opponent, or unknown by using team labels, aliases, colors, side of the versus screen, highlighted rows, prefixes like DC, and surrounding layout context.",
-        "- If a visible player name exactly matches a configured known own player, classify that player as own even when the row has no visible team label.",
-        "- Do not mix team assignments. If a row cannot be verified as the configured own team, use opponent or unknown.",
+        "- For every visible leaderboard/ranking row, return pixel coordinates for the player-name text bounding box in that source image.",
+        "- Coordinates must be pixel values relative to the exact image you receive (top-left origin). Use integers.",
+        "- nameBox should tightly cover only the white player-name text, not the flag, rank number, trophy icon, or score.",
+        "- The bot classifies own vs opponent locally from the row background color behind the name (golden = own, blue = opponent).",
+        "- Still include teamType as a best guess, but accurate nameBox coordinates are more important than guessing team colors yourself.",
+        "- If a visible player name exactly matches a configured known own player, you may mark teamType as own.",
+        "- Do not mix team assignments when no row background is visible (for example podium-only crops).",
         "- Do not calculate #KAB. The bot calculates it after parsing.",
         "- Include raw visible text for debugging.",
         "",
@@ -426,14 +478,18 @@ function buildTeamEventPrompt(teamConfig = {}) {
         "    \"teamLabel\": \"string\",",
         "    \"teamType\": \"own|opponent|unknown\",",
         "    \"points\": 0,",
+        "    \"eventPoints\": 0,",
+        "    \"teamEventPoints\": 0,",
         "    \"score\": 0,",
         "    \"sourceImageIndex\": 1,",
+        "    \"nameBox\": {\"x\": 0, \"y\": 0, \"width\": 0, \"height\": 0},",
         "    \"rawText\": \"string\",",
         "    \"classificationReason\": \"string\",",
         "    \"confidence\": 0.0",
         "  }],",
         "  \"podium\": [{\"rank\":1, \"playerName\":\"string\", \"teamType\":\"own|opponent|unknown\"}],",
-        "  \"metadata\": {\"winner\":\"string\", \"ownTeamScore\":0, \"opponentTeamScore\":0, \"notes\":\"string\"},",
+        "  \"metadata\": {\"winner\":\"string\", \"ownTeamScore\":0, \"opponentTeamScore\":0, \"teamScoreLine\":\"string\", \"notes\":\"string\"},",
+        "  \"teamEventScores\": {\"ownTeamName\":\"string\", \"opponentTeamName\":\"string\", \"ownScore\":0, \"opponentScore\":0, \"rawLine\":\"string\"},",
         "  \"rawVisibleTextByImage\": [{\"imageIndex\":1, \"text\":\"string\"}]",
         "}"
     ].join("\n");
@@ -544,7 +600,7 @@ async function extractTeamEventSession(imagePaths, teamConfig = {}, settings = {
         rawResponseText: response.text,
         rawResponse: response.raw,
         usageMetadata: response.usageMetadata,
-        ocrResults
+        ocrResults: await annotateOcrImageSizes(ocrResults)
     };
 }
 
@@ -621,7 +677,38 @@ function aliasMatches(text, aliases) {
     });
 }
 
+function ownTeamLabel(teamConfig = {}) {
+    return cleanText(teamConfig.name || teamConfig.id || "Own team", 80);
+}
+
+function applyOwnTeamLabels(players, teamConfig = {}) {
+    const label = ownTeamLabel(teamConfig);
+    if (!label) return players;
+
+    return (players || []).map(player => {
+        if (player.teamType !== "own") return player;
+        return {
+            ...player,
+            teamLabel: label
+        };
+    });
+}
+
 function classifyPlayer(row, teamConfig = {}) {
+    const backgroundType = normalizeTeamType(row.backgroundTeamType);
+    if (backgroundType === "own" || backgroundType === "opponent") {
+        const own = backgroundType === "own";
+        return {
+            ...row,
+            teamType: backgroundType,
+            teamLabel: own
+                ? (teamConfig.name || row.teamLabel || "Own team")
+                : (row.teamLabel || "Opponent"),
+            teamColor: own ? "yellow" : "blue",
+            classificationSource: row.classificationSource || "row-background"
+        };
+    }
+
     const aliases = teamAliases(teamConfig);
     const haystack = `${row.playerName || ""} ${row.teamLabel || ""} ${row.rawLine || ""} ${row.classificationReason || ""}`;
     const matchedAlias = aliasMatches(haystack, aliases);
@@ -666,9 +753,13 @@ function normalizeGeminiRow(row, ocrResults, teamConfig = {}) {
     const points = firstNumber(
         row.points,
         row.eventPoints,
+        row.eventPoint,
         row.cupPoints,
         row.teamEventPoints,
-        row.tePoints
+        row.teamEventPoint,
+        row.tePoints,
+        row.contribution,
+        parseEventPointsFromLeaderboardText(row.rawText || row.rawLine || "")
     );
     const score = firstNumber(
         row.score,
@@ -678,6 +769,16 @@ function normalizeGeminiRow(row, ocrResults, teamConfig = {}) {
         row.value
     );
 
+    const sourceImageIndex = Number(row.sourceImageIndex || row.imageIndex || row.sourceImage || 0) || undefined;
+    const { width, height } = (() => {
+        const index = Number(sourceImageIndex);
+        const result = Number.isInteger(index) && index > 0 ? ocrResults[index - 1] : ocrResults[0];
+        return {
+            width: Number(result?.imageWidth) || 0,
+            height: Number(result?.imageHeight) || 0
+        };
+    })();
+
     return classifyPlayer({
         rank,
         placement: rank,
@@ -686,7 +787,12 @@ function normalizeGeminiRow(row, ocrResults, teamConfig = {}) {
         teamType: row.teamType || row.classification || row.sideType || "",
         points,
         score,
+        sourceImageIndex,
         sourceImage: rowSourceImage(row, ocrResults),
+        nameBox: row.nameBox || row.name_box || row.boundingBox || null,
+        nameCenter: row.nameCenter || row.name_center || null,
+        imageWidth: width,
+        imageHeight: height,
         rawLine: cleanText(row.rawText || row.rawLine || "", 300),
         classificationReason: cleanText(row.classificationReason || row.reason || "", 300),
         confidence: Number.isFinite(Number(row.confidence)) ? Number(row.confidence) : null
@@ -731,6 +837,33 @@ function fallbackRowsFromText(ocrResults, teamConfig = {}) {
     return rows;
 }
 
+function enrichPlayersWithEventPoints(players, ocrResults) {
+    const pointsByKey = new Map();
+
+    for (const result of ocrResults || []) {
+        const lines = normalizeOcrText(result.text || "").split("\n");
+        for (const line of lines) {
+            const parsed = parsePlacementLine(line);
+            if (!parsed || parsed.points === null) continue;
+            pointsByKey.set(`${parsed.rank}:${normalizeForMatch(parsed.playerName)}`, parsed.points);
+        }
+    }
+
+    return (players || []).map(player => {
+        if (firstNumber(player.points) !== null) return player;
+
+        const key = `${player.rank}:${normalizeForMatch(player.playerName)}`;
+        const points = pointsByKey.get(key);
+        if (points === null || points === undefined) return player;
+
+        return {
+            ...player,
+            points,
+            pointsSource: "ocr-line-fallback"
+        };
+    });
+}
+
 function dedupeRows(rows) {
     const map = new Map();
     for (const row of rows) {
@@ -746,29 +879,175 @@ function dedupeRows(rows) {
     );
 }
 
-function metadataTeamScores(payload = {}, teamConfig = {}) {
-    const metadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
-    const ownFromMetadata = firstNumber(metadata.ownTeamScore, payload.ownTeamScore);
-    const opponentFromMetadata = firstNumber(metadata.opponentTeamScore, payload.opponentTeamScore);
-    if (ownFromMetadata !== null || opponentFromMetadata !== null) {
+function teamScoreBundle(own, opponent, rawLine = "") {
+    const ownScore = firstNumber(own);
+    const opponentScore = firstNumber(opponent);
+    if (ownScore === null && opponentScore === null) return null;
+
+    return {
+        own: ownScore,
+        opponent: opponentScore,
+        rawLine: cleanText(rawLine, 200)
+    };
+}
+
+function parseTeamNameScoreLine(line) {
+    const text = String(line || "")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!text || text.length > 120) return null;
+    if (/winner|touch|continue|cup points|season points|garage power|placement|rank\b/i.test(text)) return null;
+
+    const labeled = text.match(/^([A-Za-z0-9|™®\u2122\s.'[\]-]{2,40}?)\s*[:|-]?\s*(\d[\d\s,.]{2,8})$/);
+    if (labeled) {
         return {
-            own: ownFromMetadata,
-            opponent: opponentFromMetadata,
-            rawLine: cleanText(metadata.teamScoreLine || payload.teamScoreLine || "", 200)
+            label: cleanText(labeled[1], 80),
+            score: parseNumber(labeled[2])
         };
     }
 
+    const trailing = text.match(/^([A-Za-z0-9|™®\u2122\s.'[\]-]{2,40}?)\s+(\d[\d\s,.]{2,8})$/);
+    if (!trailing) return null;
+
+    return {
+        label: cleanText(trailing[1], 80),
+        score: parseNumber(trailing[2])
+    };
+}
+
+function parseTeamScoresFromOcr(ocrResults, teamConfig = {}) {
     const aliases = teamAliases(teamConfig);
-    const teams = Array.isArray(payload.teams) ? payload.teams : [];
-    const own = teams.find(team => normalizeTeamType(team.teamType) === "own" || aliasMatches(team.label || team.name, aliases));
-    const opponent = teams.find(team => team !== own && normalizeTeamType(team.teamType) === "opponent");
+    const ownKey = normalizeForMatch(teamConfig.name);
+    const entries = new Map();
+
+    const remember = (label, score) => {
+        if (!label || score === null) return;
+        const key = normalizeForMatch(label);
+        if (!key) return;
+        const current = entries.get(key);
+        if (!current || score > current.score) {
+            entries.set(key, { label, score });
+        }
+    };
+
+    for (const result of ocrResults || []) {
+        const chunks = [
+            result?.text || "",
+            result?.rawGeminiText || ""
+        ];
+
+        for (const chunk of chunks) {
+            const lines = normalizeOcrText(chunk).split("\n").map(line => line.trim()).filter(Boolean);
+            for (const line of lines) {
+                const parsedLine = parseTeamNameScoreLine(line);
+                if (parsedLine) remember(parsedLine.label, parsedLine.score);
+
+                const versus = line.match(/(\d[\d\s,.]{2,8})\s*(?:vs\.?|v\.?s\.?)\s*(\d[\d\s,.]{2,8})/i);
+                if (versus) {
+                    const left = parseNumber(versus[1]);
+                    const right = parseNumber(versus[2]);
+                    if (left !== null && right !== null) {
+                        return teamScoreBundle(left, right, line);
+                    }
+                }
+            }
+        }
+    }
+
+    let own = null;
+    let opponent = null;
+    let ownLabel = "";
+    let opponentLabel = "";
+
+    for (const entry of entries.values()) {
+        const key = normalizeForMatch(entry.label);
+        const isOwn = aliasMatches(entry.label, aliases) || (ownKey && key === ownKey);
+        if (isOwn) {
+            own = entry.score;
+            ownLabel = entry.label;
+            continue;
+        }
+
+        if (opponent === null || entry.score > opponent) {
+            opponent = entry.score;
+            opponentLabel = entry.label;
+        }
+    }
+
+    if (own === null && opponent === null) return null;
+
+    const rawLine = [
+        ownLabel ? `${ownLabel} ${own ?? ""}`.trim() : own ?? "",
+        opponentLabel ? `${opponentLabel} ${opponent ?? ""}`.trim() : opponent ?? ""
+    ].filter(Boolean).join(" vs ");
+
+    return teamScoreBundle(own, opponent, rawLine);
+}
+
+function metadataTeamScores(payload = {}, teamConfig = {}) {
+    const metadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
+    const eventScores = payload.teamEventScores && typeof payload.teamEventScores === "object"
+        ? payload.teamEventScores
+        : payload.teamScores && typeof payload.teamScores === "object" && !Array.isArray(payload.teamScores)
+            ? payload.teamScores
+            : null;
+
+    const fromEventScores = eventScores
+        ? teamScoreBundle(
+            firstNumber(
+                eventScores.own,
+                eventScores.ownScore,
+                eventScores.ownTeamScore,
+                eventScores.ownPoints
+            ),
+            firstNumber(
+                eventScores.opponent,
+                eventScores.opponentScore,
+                eventScores.opponentTeamScore,
+                eventScores.opponentPoints
+            ),
+            eventScores.rawLine || eventScores.line || ""
+        )
+        : null;
+    if (fromEventScores) return fromEventScores;
+
+    const fromMetadata = teamScoreBundle(
+        firstNumber(metadata.ownTeamScore, metadata.ownScore, payload.ownTeamScore, payload.ownScore),
+        firstNumber(metadata.opponentTeamScore, metadata.opponentScore, payload.opponentTeamScore, payload.opponentScore),
+        metadata.teamScoreLine || payload.teamScoreLine || ""
+    );
+    if (fromMetadata) return fromMetadata;
+
+    const aliases = teamAliases(teamConfig);
+    const teams = [
+        ...(Array.isArray(payload.teams) ? payload.teams : []),
+        ...(Array.isArray(payload?.metadata?.teams) ? payload.metadata.teams : [])
+    ];
+
+    const own = teams.find(team =>
+        normalizeTeamType(team.teamType) === "own" ||
+        aliasMatches(team.label || team.name || team.teamName, aliases)
+    );
+    const opponent = teams.find(team =>
+        team !== own && (
+            normalizeTeamType(team.teamType) === "opponent" ||
+            cleanText(team.label || team.name || team.teamName, 80)
+        )
+    );
 
     if (!own && !opponent) return null;
-    return {
-        own: firstNumber(own?.score, own?.points),
-        opponent: firstNumber(opponent?.score, opponent?.points),
-        rawLine: teams.map(team => `${team.label || team.name || "Team"} ${team.score ?? team.points ?? ""}`.trim()).join(" vs ")
-    };
+
+    return teamScoreBundle(
+        firstNumber(own?.score, own?.points, own?.teamEventScore, own?.eventScore),
+        firstNumber(opponent?.score, opponent?.points, opponent?.teamEventScore, opponent?.eventScore),
+        teams.map(team => `${team.label || team.name || team.teamName || "Team"} ${team.score ?? team.points ?? team.teamEventScore ?? ""}`.trim()).join(" vs ")
+    );
+}
+
+function resolveTeamScores(payload, ocrResults, teamConfig = {}) {
+    return metadataTeamScores(payload, teamConfig)
+        || parseTeamScoresFromOcr(ocrResults, teamConfig)
+        || null;
 }
 
 function parseMetadata(ocrResults, teamConfig = {}) {
@@ -800,14 +1079,24 @@ function parseMetadata(ocrResults, teamConfig = {}) {
     };
 }
 
-function normalizeGeminiEvent(payload, ocrResults, teamConfig = {}) {
-    const rows = dedupeRows(
+async function normalizeGeminiEvent(payload, ocrResults, teamConfig = {}) {
+    const geminiRows = dedupeRows(
         flattenGeminiRows(payload)
             .map(row => normalizeGeminiRow(row, ocrResults, teamConfig))
             .filter(Boolean)
     );
+    const rows = applyOwnTeamLabels(
+        await classifyPlayersByRowBackground(ocrResults, geminiRows),
+        teamConfig
+    );
     const fallbackRows = rows.length ? [] : fallbackRowsFromText(ocrResults, teamConfig);
-    const players = rows.length ? rows : dedupeRows(fallbackRows);
+    const players = enrichPlayersWithEventPoints(
+        applyOwnTeamLabels(
+            rows.length ? rows : dedupeRows(fallbackRows),
+            teamConfig
+        ),
+        ocrResults
+    );
     const fallback = parseMetadata(ocrResults, teamConfig);
     const metadataObject = payload?.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
     const eventName = cleanText(
@@ -829,7 +1118,7 @@ function normalizeGeminiEvent(payload, ocrResults, teamConfig = {}) {
             ownTeamName: teamConfig.name || fallback.ownTeamName || "",
             screenshotTypes: Array.isArray(payload?.screenshotTypes) ? payload.screenshotTypes.map(item => cleanText(item, 40)).filter(Boolean) : [],
             teams: Array.isArray(payload?.teams) ? payload.teams : [],
-            teamScores: metadataTeamScores(payload, teamConfig) || fallback.teamScores,
+            teamScores: resolveTeamScores(payload, ocrResults, teamConfig) || fallback.teamScores,
             winner: cleanText(metadataObject.winner || payload?.winner || "", 120),
             notes: cleanText(metadataObject.notes || payload?.notes || "", 500),
             extractionModel: ocrResults[0]?.model || fallback.extractionModel || "",
@@ -901,19 +1190,27 @@ function summarize(players) {
     };
 }
 
-function parseRaceScreenshots(ocrResults, teamConfig = {}) {
-    const structured = ocrResults.find(result => result.structured)?.structured;
+async function parseRaceScreenshots(ocrResults, teamConfig = {}) {
+    const sizedResults = await annotateOcrImageSizes(ocrResults);
+    const structured = sizedResults.find(result => result.structured)?.structured;
     if (structured && typeof structured === "object") {
-        return normalizeGeminiEvent(structured, ocrResults, teamConfig);
+        return normalizeGeminiEvent(structured, sizedResults, teamConfig);
     }
 
-    const players = dedupeRows(fallbackRowsFromText(ocrResults, teamConfig));
-    const metadata = parseMetadata(ocrResults, teamConfig);
+    const players = enrichPlayersWithEventPoints(
+        applyOwnTeamLabels(dedupeRows(fallbackRowsFromText(sizedResults, teamConfig)), teamConfig),
+        sizedResults
+    );
+    const metadata = parseMetadata(sizedResults, teamConfig);
+    const teamScores = parseTeamScoresFromOcr(sizedResults, teamConfig) || metadata.teamScores;
     return {
-        metadata,
+        metadata: {
+            ...metadata,
+            teamScores
+        },
         players,
         stats: summarize(players),
-        rawText: ocrResults.map((result, index) => `--- Image ${index + 1} / Gemini visible text ---\n${result.text}`).join("\n\n")
+        rawText: sizedResults.map((result, index) => `--- Image ${index + 1} / Gemini visible text ---\n${result.text}`).join("\n\n")
     };
 }
 
@@ -964,7 +1261,12 @@ module.exports = {
     normalizeOcrText,
     ocrImage,
     ocrImages,
+    applyOwnTeamLabels,
+    enrichPlayersWithEventPoints,
+    parseEventPointsFromLeaderboardText,
     parseRaceScreenshots,
+    parseTeamScoresFromOcr,
+    resolveTeamScores,
     runCommand,
     summarizePlayers: summarize
 };

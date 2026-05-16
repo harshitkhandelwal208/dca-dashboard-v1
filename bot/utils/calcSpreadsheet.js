@@ -124,7 +124,6 @@ function playerDisplayRows(session) {
                     player.rank ?? "",
                     player.playerName || "",
                     player.teamLabel || (own ? session.teamName || session.teamId || "Own team" : "Opponent"),
-                    own ? "Own" : "Opponent",
                     pointsValue(player) || "",
                     scoreValue(player) || "",
                     killed,
@@ -167,7 +166,6 @@ function resultRows(session) {
         "Rank",
         "Player",
         "Team",
-        "Type",
         "Event Points",
         "Score",
         "Blues Killed",
@@ -215,7 +213,6 @@ function resultWorkbookRows(session) {
         "Rank",
         "Player",
         "Team",
-        "Type",
         "Event Points",
         "Score",
         "Blues Killed",
@@ -228,7 +225,7 @@ function resultWorkbookRows(session) {
         ...playerDisplayRows(session).map(item => ({
             values: item.values,
             fill: item.own ? OWN_COLOR : OPPONENT_COLOR,
-            kab: Number(item.values[8]) > 0,
+            kab: Number(item.values[7]) > 0,
             own: item.own
         }))
     ];
@@ -342,12 +339,11 @@ function buildSpreadsheetImageSvg(session) {
         { label: "Rank", width: 70, value: item => item.values[0] },
         { label: "Player", width: 250, value: item => item.values[1] },
         { label: "Team", width: 210, value: item => item.values[2] },
-        { label: "Type", width: 110, value: item => item.values[3] },
-        { label: "Pts", width: 90, value: item => item.values[4] },
-        { label: "Score", width: 120, value: item => item.values[5] },
-        { label: "Blues", width: 90, value: item => item.values[6] },
-        { label: "Blue %", width: 90, value: item => item.values[7] },
-        { label: "#KAB", width: 80, value: item => item.values[8] }
+        { label: "Pts", width: 90, value: item => item.values[3] },
+        { label: "Score", width: 120, value: item => item.values[4] },
+        { label: "Blues", width: 90, value: item => item.values[5] },
+        { label: "Blue %", width: 90, value: item => item.values[6] },
+        { label: "#KAB", width: 80, value: item => item.values[7] }
     ];
     const rows = playerDisplayRows(session);
     const rowHeight = 34;

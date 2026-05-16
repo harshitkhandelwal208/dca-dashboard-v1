@@ -10,7 +10,8 @@
     "start": "npm run deploy:commands && node index.js",
     "start:runtime": "node index.js",
     "deploy:commands": "node deploy-commands.js",
-    "test:spreadsheets": "node scripts/test-spreadsheets.js"
+    "test:spreadsheets": "node scripts/test-spreadsheets.js",
+    "test:row-background": "node scripts/test-row-background.js"
   },
   "dependencies": {
     "discord.js": "^14.15.0",

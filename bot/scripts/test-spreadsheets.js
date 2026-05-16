@@ -3,7 +3,12 @@ const fs = require("fs");
 const path = require("path");
 const ExcelJS = require("exceljs");
 const { generateSpreadsheetArtifacts } = require("../utils/calcSpreadsheet");
-const { parseRaceScreenshots } = require("../utils/raceOcr");
+const {
+    parseEventPointsFromLeaderboardText,
+    parseRaceScreenshots,
+    parseTeamScoresFromOcr
+} = require("../utils/raceOcr");
+const { teamScoreFromMetadata } = require("../utils/spreadsheetMetrics");
 const { generatePeriodReport } = require("../utils/spreadsheetReports");
 
 async function workbookSheets(filePath) {
@@ -47,12 +52,41 @@ async function main() {
         }
     }];
 
-    const parsed = parseRaceScreenshots(ocrResults, teamConfig);
+    const parsed = await parseRaceScreenshots(ocrResults, teamConfig);
     const ownNames = parsed.players
         .filter(player => player.teamType === "own")
         .map(player => player.playerName);
     assert(ownNames.includes("jacco"), "known own player jacco should be classified as own");
     assert(ownNames.includes("NoPrefixOwn"), "known own player NoPrefixOwn should be classified as own");
+    assert(
+        parsed.players.filter(player => player.teamType === "own").every(player => player.teamLabel === teamConfig.name),
+        "own-team players should use the configured team name"
+    );
+
+    const scoreSession = {
+        metadata: {
+            teamScores: parseTeamScoresFromOcr([{
+                text: "Chip Happens\nDiscord 2866\nMIDGARD 1654"
+            }], teamConfig)
+        }
+    };
+    assert.strictEqual(teamScoreFromMetadata(scoreSession, "own"), 2866);
+    assert.strictEqual(teamScoreFromMetadata(scoreSession, "opponent"), 1654);
+    assert.strictEqual(parseEventPointsFromLeaderboardText("300 1. DC|hype 51816"), 300);
+
+    const pointsFallback = await parseRaceScreenshots([{
+        imagePath: "fixture-leaderboard.png",
+        text: "300 1. DC|hype 51816\n280 2. Enemy 51714",
+        structured: {
+            eventName: "Chip Happens",
+            players: [
+                { rank: 1, playerName: "DC|hype", teamType: "own", score: 51816 },
+                { rank: 2, playerName: "Enemy", teamType: "opponent", score: 51714 }
+            ]
+        }
+    }], teamConfig);
+    assert.strictEqual(pointsFallback.players[0].points, 300);
+    assert.strictEqual(pointsFallback.players[1].points, 280);
 
     const session = {
         id: `spreadsheet-test-${stamp}`,
@@ -81,6 +115,14 @@ async function main() {
 
     const eventSheets = await workbookSheets(artifacts.spreadsheetPath);
     assert.deepStrictEqual(eventSheets, ["Summary", "Results", "Attendance"]);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(artifacts.spreadsheetPath);
+    const results = workbook.getWorksheet("Results");
+    const headers = [];
+    results.getRow(1).eachCell({ includeEmpty: true }, cell => headers.push(String(cell.value || "")));
+    assert(!headers.includes("Type"), "Results sheet should not include a Type column");
+    assert(headers.includes("Event Points"), "Results sheet should include Event Points");
 
     const report = await generatePeriodReport(teamConfig, "weekly", {
         anchorDate: new Date(processedAt),
