@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCA Bot Suite Complete Guide</title>
+  <style>
+    @page { size: A4; margin: 13mm; }
+    :root {
+      color-scheme: dark;
+      --bg: #0b1116;
+      --surface: #111922;
+      --surface-2: #17222c;
+      --surface-3: #21303b;
+      --text: #f2f7f5;
+      --muted: #9eb0b6;
+      --line: rgba(255,255,255,0.14);
+      --teal: #37d6a7;
+      --amber: #ffbf5f;
+      --blue: #75a7ff;
+      --rose: #f26f91;
+      --violet: #9b8cff;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 20px 0 36px;
+      background:
+        linear-gradient(135deg, rgba(55,214,167,0.13), transparent 30%),
+        linear-gradient(225deg, rgba(117,167,255,0.1), transparent 34%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, Arial, Helvetica, sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: clamp(40px, 6vw, 68px); line-height: 1.02; margin-bottom: 14px; }
+    h2 { font-size: clamp(24px, 3vw, 34px); margin-bottom: 10px; }
+    h3 { font-size: 18px; margin-bottom: 6px; }
+    p { color: var(--muted); margin-bottom: 9px; }
+    a { color: inherit; }
+    code {
+      color: #d7e4ff;
+      font: 13px/1.45 Consolas, "Liberation Mono", monospace;
+      overflow-wrap: anywhere;
+    }
+    ul { margin: 0 0 10px 18px; padding: 0; color: var(--muted); }
+    li { margin: 3px 0; }
+    .page {
+      width: min(1120px, calc(100% - 32px));
+      min-height: 0;
+      margin: 0 auto 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.026)),
+        rgba(12,18,24,0.94);
+      box-shadow: 0 22px 60px rgba(0,0,0,0.34);
+      page-break-after: auto;
+      overflow: hidden;
+    }
+    .page:last-child { page-break-after: auto; }
+    .content {
+      --content-pad: clamp(20px, 4vw, 38px);
+      padding: var(--content-pad);
+    }
+    .cover {
+      min-height: min(560px, calc(100vh - 40px));
+      padding: clamp(28px, 5vw, 56px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background:
+        radial-gradient(circle at 90% 14%, rgba(255,255,255,0.16), transparent 18%),
+        linear-gradient(135deg, #0d6f68, #2563eb 55%, #7c3aed);
+    }
+    .kicker {
+      display: inline-block;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 999px;
+      padding: 7px 13px;
+      font-size: 9pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #e9fffa;
+      background: rgba(255,255,255,0.11);
+    }
+    .subtitle { max-width: 820px; color: #d1fae5; font-size: 18px; }
+    .cover-grid, .grid-2, .grid-3 { display: grid; gap: 10px; }
+    .cover-grid { grid-template-columns: repeat(2, 1fr); max-width: 860px; }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .card, .cover-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: rgba(255,255,255,0.055);
+      break-inside: avoid;
+    }
+    .card { position: relative; }
+    .card:before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 3px;
+      background: linear-gradient(90deg, var(--teal), var(--blue));
+    }
+    .card h3, .cover-card strong { color: var(--text); display: block; }
+    .cover-card span { color: #d1fae5; }
+    .band {
+      margin: calc(var(--content-pad) * -1) calc(var(--content-pad) * -1) 20px;
+      padding: clamp(22px, 4vw, 34px) var(--content-pad) clamp(18px, 3vw, 26px);
+      background: linear-gradient(100deg, rgba(55,214,167,0.35), rgba(117,167,255,0.2), rgba(155,140,255,0.24));
+      border-bottom: 1px solid var(--line);
+    }
+    .band h2 { margin-bottom: 5px; }
+    .toc {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+    .toc a {
+      min-height: 86px;
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 3px 10px;
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: rgba(255,255,255,0.045);
+    }
+    .toc span {
+      grid-row: span 2;
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: #07110f;
+      background: linear-gradient(135deg, var(--teal), var(--amber));
+      font-weight: 800;
+    }
+    .toc small, .definition span { color: var(--muted); }
+    .definition {
+      display: grid;
+      grid-template-columns: minmax(160px, 0.28fr) 1fr;
+      gap: 8px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--line);
+      break-inside: avoid;
+    }
+    .command {
+      display: grid;
+      grid-template-columns: minmax(240px, 0.36fr) 1fr;
+      gap: 10px;
+      border: 1px solid rgba(117,167,255,0.28);
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin: 6px 0;
+      background: rgba(117,167,255,0.08);
+      break-inside: avoid;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 9px 0 12px;
+      font-size: 14px;
+      break-inside: avoid;
+    }
+    .table th {
+      color: #07110f;
+      background: linear-gradient(135deg, var(--teal), #82dec6);
+      border: 1px solid rgba(0,0,0,0.25);
+      padding: 7px;
+      text-align: left;
+    }
+    .table td {
+      border: 1px solid var(--line);
+      padding: 6px 7px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.04);
+    }
+    .callout {
+      border: 1px solid rgba(55,214,167,0.32);
+      border-left: 5px solid var(--teal);
+      border-radius: 8px;
+      padding: 10px 11px;
+      margin: 10px 0;
+      background: rgba(55,214,167,0.09);
+      break-inside: avoid;
+    }
+    .callout p { margin: 4px 0 0; }
+    .footer { color: #d1fae5; font-size: 14px; }
+    section[id] { scroll-margin-top: 20px; }
+    @media (max-width: 760px) {
+      body { padding: 0 0 20px; }
+      .page {
+        width: 100%;
+        margin: 0 0 12px;
+        border-left: 0;
+        border-right: 0;
+        border-radius: 0;
+      }
+      .cover { min-height: auto; }
+      .cover-grid, .grid-2, .grid-3, .toc { grid-template-columns: 1fr; }
+      .toc a { min-height: auto; }
+      .definition, .command { grid-template-columns: 1fr; gap: 5px; }
+      .table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
+    @media print {
+      body { background: #0b1116; padding: 0; font-size: 10.4pt; }
+      h1 { font-size: 35pt; }
+      h2 { font-size: 21pt; }
+      h3 { font-size: 12.8pt; }
+      code { font-size: 9.5pt; }
+      .page {
+        width: 184mm;
+        min-height: 271mm;
+        margin: 0;
+        box-shadow: none;
+        border-radius: 0;
+        page-break-after: always;
+      }
+      .page:last-child { page-break-after: auto; }
+      .content { --content-pad: 17mm; padding: 17mm; }
+      .cover { min-height: 271mm; padding: 22mm; }
+      .subtitle { max-width: 140mm; font-size: 14pt; }
+      .cover-grid { max-width: 150mm; }
+      .band { margin: -17mm -17mm 14px; padding: 13mm 17mm 9mm; }
+      .definition { grid-template-columns: 38mm 1fr; }
+      .command { grid-template-columns: 63mm 1fr; }
+      .table { font-size: 9.4pt; }
+      .footer { font-size: 9.5pt; }
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div>
+      <div class="kicker">DCA Bot Suite</div>
+      <h1>Complete Operations Guide</h1>
+      <p class="subtitle">Dashboard setup, recruitment tickets, team-event spreadsheets, member counts, reaction roles, YouTube feeds, moderation, event helpers, logs, and troubleshooting.</p>
+      <div class="cover-grid">
+        <div class="cover-card"><strong>Dashboard admins</strong><span>Configure channels, roles, panels, feeds, teams, and server settings.</span></div>
+        <div class="cover-card"><strong>Recruitment staff</strong><span>Operate tickets, tutorials, transcripts, ban lists, and invite workflows.</span></div>
+        <div class="cover-card"><strong>Spreadsheet staff</strong><span>Process screenshots, correct OCR data, and generate weekly/monthly reports.</span></div>
+        <div class="cover-card"><strong>Moderators</strong><span>Use warning, cleanup, role, lookup, reminder, and utility commands.</span></div>
+      </div>
+    </div>
+    <div class="footer">Use the linked index below to jump to any section in this web guide. The dashboard Documentation tab embeds this page directly.</div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Linked Index</h2>
+        <p>Each item below links to its section in the HTML document.</p>
+      </div>
+      <div class="toc">
+        <a href="#start"><span>01</span><strong>Start Here</strong><small>Bot suite overview, access model, and mental model.</small></a>
+        <a href="#dashboard"><span>02</span><strong>Dashboard Operations</strong><small>Save model, sync buttons, server context, and OAuth.</small></a>
+        <a href="#recruitment"><span>03</span><strong>Recruitment Tickets</strong><small>Panel setup, ticket lifecycle, tutorials, transcripts, and close outcomes.</small></a>
+        <a href="#spreadsheets"><span>04</span><strong>Team Event Spreadsheets</strong><small>Screenshot sessions, OCR, outputs, corrections, and reports.</small></a>
+        <a href="#members"><span>05</span><strong>Member Counts</strong><small>Team counts, recruitment status, aliases, sync, and role automation.</small></a>
+        <a href="#reaction-roles"><span>06</span><strong>Reaction Roles</strong><small>Community role panels, options, reactions, and sync behavior.</small></a>
+        <a href="#youtube"><span>07</span><strong>YouTube Feeds</strong><small>Feed configuration, templates, and manual checks.</small></a>
+        <a href="#moderation"><span>08</span><strong>Moderation</strong><small>Warnings, bans, kicks, cleanup, lookups, roles, and legacy commands.</small></a>
+        <a href="#events"><span>09</span><strong>Event Helpers</strong><small>Top-three posts, team-event summaries, mastery assets, and reminders.</small></a>
+        <a href="#troubleshooting"><span>10</span><strong>Troubleshooting</strong><small>Logs, diagnostics, common failures, and recovery steps.</small></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="start">
+    <div class="content">
+      <div class="band"><h2>Start Here</h2><p>The DCA Bot Suite has two parts: the Discord bot and the dashboard website.</p></div>
+      <div class="grid-3">
+        <div class="card"><h3>Discord bot</h3><p>Handles slash commands, prefix commands, recruitment threads, reaction-role sync, reminders, moderation actions, feed announcements, and spreadsheet reports.</p></div>
+        <div class="card"><h3>Dashboard</h3><p>Controls persistent configuration. Use it for channels, roles, panels, spreadsheets, feeds, team counts, logs, and server settings.</p></div>
+        <div class="card"><h3>Data flow</h3><p>Dashboard settings are saved to config, bot utilities read that config, and Discord commands or scheduled jobs execute workflows.</p></div>
+      </div>
+      <div class="definition"><strong>Dashboard access</strong><span>Discord OAuth plus the configured dashboard access role.</span></div>
+      <div class="definition"><strong>Spreadsheet access</strong><span>Administrator permission or the configured spreadsheet team access role.</span></div>
+      <div class="definition"><strong>Recruitment access</strong><span>Recruiter and manager role settings control ticket operations.</span></div>
+      <div class="definition"><strong>Community vs recruitment</strong><span>The dashboard distinguishes community and recruitment server channels/roles so features post to the right guild.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="dashboard">
+    <div class="content">
+      <div class="band"><h2>Dashboard Operations</h2><p>Use the dashboard as the main configuration surface.</p></div>
+      <div class="grid-2">
+        <div class="card"><h3>Save before relying on changes</h3><p>Most edits stay local until Save is pressed. After saving, use the relevant sync button for Discord messages that need to be refreshed.</p></div>
+        <div class="card"><h3>Quick actions</h3><p>The Overview tab can sync the apply panel, reaction roles, and member count message without leaving the page.</p></div>
+      </div>
+      <table class="table">
+        <thead><tr><th>Dashboard Tab</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td>Overview</td><td>Operational summary, quick sync actions, and recent recruitment outcomes.</td></tr>
+          <tr><td>Tickets</td><td>Recruitment panel, ticket settings, outcomes, tutorials, invites, and ban list channel.</td></tr>
+          <tr><td>Reaction Roles</td><td>Community reaction role panel configuration.</td></tr>
+          <tr><td>YouTube</td><td>Feed configuration and announcement template.</td></tr>
+          <tr><td>Spreadsheets</td><td>Gemini extraction settings and team-event channel setup.</td></tr>
+          <tr><td>Members</td><td>Member-count message, team list, aliases, and role automation.</td></tr>
+          <tr><td>Logs</td><td>Bot logs, recruitment logs, ticket records, transcripts, and applicant images.</td></tr>
+          <tr><td>Documentation</td><td>Embedded complete web guide with section links.</td></tr>
+          <tr><td>Server</td><td>Guild IDs, dashboard/recruiter/manager roles, command log channel, locale, welcome, and leave messages.</td></tr>
+        </tbody>
+      </table>
+      <div class="command"><code>/dashboard</code><span>Returns the configured dashboard URL in Discord.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="recruitment">
+    <div class="content">
+      <div class="band"><h2>Recruitment Tickets</h2><p>Recruitment workflows cover panel setup, applicant threads, staff actions, tutorials, transcripts, and outcomes.</p></div>
+      <div class="grid-3">
+        <div class="card"><h3>Panel</h3><p>Configure panel channel, title, description, questions, private thread mode, recruiter role, and log channels.</p></div>
+        <div class="card"><h3>Ticket lifecycle</h3><p>Applicant opens a ticket, staff claims it, staff reviews answers/screenshots, staff closes with an outcome, and the bot archives/locks the thread.</p></div>
+        <div class="card"><h3>Records</h3><p>Recruitment logs, transcript previews, ticket metadata, and applicant images are visible from the Logs dashboard tab.</p></div>
+      </div>
+      <div class="command"><code>/tickets setup</code><span>Configure and post the apply panel.</span></div>
+      <div class="command"><code>/tickets sync-panel</code><span>Refresh the apply panel from dashboard/config settings.</span></div>
+      <div class="command"><code>/tickets sync-banlist</code><span>Refresh the recruitment ban list panel.</span></div>
+      <div class="command"><code>/tickets status / logs</code><span>Inspect ticket configuration or recent outcomes.</span></div>
+      <div class="command"><code>/tickets claim / close</code><span>Claim a thread or close it with an accepted/rejected/team outcome.</span></div>
+      <div class="command"><code>/tickets add / massadd / remove / rename</code><span>Manage thread access or naming.</span></div>
+      <div class="command"><code>/tickets tutorial</code><span>Send a configured tutorial video into the ticket thread.</span></div>
+      <div class="command"><code>/tickets screenshot-list / screenshot-add / screenshot-change / screenshot-remove</code><span>Review, add, replace, or remove saved applicant screenshots before closing a ticket.</span></div>
+      <div class="command"><code>/tickets archive / delete</code><span>Clean up finished ticket threads.</span></div>
+      <div class="command"><code>/invite / ban</code><span>Send accepted applicants a destination-server invite or add a recruitment ban record.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="spreadsheets">
+    <div class="content">
+      <div class="band"><h2>Team Event Spreadsheets</h2><p>Spreadsheet sessions convert HCR2 event screenshots into structured outputs and reports.</p></div>
+      <div class="grid-2">
+        <div class="card"><h3>Event output</h3><p>Processed events produce an XLSX workbook, an own-team spreadsheet image, and a chart image. Local image copies are removed after Discord upload or by retention cleanup.</p></div>
+        <div class="card"><h3>Period reports</h3><p>Weekly reports focus on blue kills and KAB. Monthly reports roll up score, points, attendance, missed events, blue kills, and KAB.</p></div>
+      </div>
+      <table class="table">
+        <thead><tr><th>Report Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Blues</td><td>Number of enemy players a driver ranked above.</td></tr>
+          <tr><td>%Kill</td><td>Total blues killed divided by total possible blues.</td></tr>
+          <tr><td>Total</td><td>Total blues killed in the report period.</td></tr>
+          <tr><td>Max</td><td>Total possible blues in the report period.</td></tr>
+          <tr><td>#KAB</td><td>Events where the driver ranked above every opponent.</td></tr>
+        </tbody>
+      </table>
+      <div class="command"><code>/spreadsheets status / sessions</code><span>Inspect setup and recent sessions.</span></div>
+      <div class="command"><code>/spreadsheets generate rerun_gemini:true</code><span>Process a session and optionally rerun Gemini extraction.</span></div>
+      <div class="command"><code>/spreadsheets summary / file / chart</code><span>Review parsed data or retrieve generated artifacts.</span></div>
+      <div class="command"><code>/spreadsheets weekly / monthly anchor_date:YYYY-MM-DD</code><span>Build period reports for a specific week or month.</span></div>
+      <div class="command"><code>/spreadsheets correct</code><span>Apply a generic field correction when a staff member needs one command for names, teams, ranks, points, scores, or event names.</span></div>
+      <div class="command"><code>/spreadsheets correct-name / correct-team / correct-placement / correct-points / correct-event-name</code><span>Fix OCR or classification mistakes and rebuild outputs.</span></div>
+      <div class="command"><code>/spreadsheets rebuild / regenerate-weekly / regenerate-monthly</code><span>Regenerate event files or force report posting.</span></div>
+      <div class="command"><code>/spreadsheets force-weekly / force-monthly</code><span>Temporary staff commands for forcing report posts during production verification.</span></div>
+      <div class="callout"><strong>Best practice</strong><p>Post all screenshots for one event together, from one user, in the monitored channel. Do not mix unrelated images during the grouping window.</p></div>
+      <div class="callout"><strong>Storage behavior</strong><p>Source screenshots are temporary processing inputs. Generated spreadsheet/report images are posted to Discord and then deleted locally; any leftovers are removed by the configured local image retention window.</p></div>
+    </div>
+  </section>
+
+  <section class="page" id="members">
+    <div class="content">
+      <div class="band"><h2>Member Counts and Team Roles</h2><p>Member tools maintain the public team count and optional role automation.</p></div>
+      <div class="definition"><strong>Team records</strong><span>Each team has a name, division, player count, recruitment status, aliases, and optional Discord roles.</span></div>
+      <div class="definition"><strong>Sync</strong><span>Sync writes the configured member-count message to Discord.</span></div>
+      <div class="definition"><strong>Automation</strong><span>Recruitment and community roles can be assigned with optional delays after accepted tickets or rules completion.</span></div>
+      <div class="command"><code>/membercount sync</code><span>Sync the member-count message.</span></div>
+      <div class="command"><code>/membercount set</code><span>Set one team's player count and optional recruitment status.</span></div>
+      <div class="command"><code>/membercount list</code><span>List configured teams.</span></div>
+      <div class="command"><code>/teamcount / updatecount</code><span>Quickly update player count or recruitment status.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="reaction-roles">
+    <div class="content">
+      <div class="band"><h2>Reaction Roles</h2><p>Reaction role panels assign community server roles through configured emoji options.</p></div>
+      <div class="grid-3">
+        <div class="card"><h3>Panel</h3><p>Each panel has a name, enabled state, channel, message ID, message text, and role options.</p></div>
+        <div class="card"><h3>Options</h3><p>Each option maps an emoji to a role and can include a human-readable label.</p></div>
+        <div class="card"><h3>Sync</h3><p>After editing panels, sync reaction roles so Discord messages and reactions match the dashboard.</p></div>
+      </div>
+      <div class="command"><code>/roles add</code><span>Add a role to a user.</span></div>
+      <div class="command"><code>/roles remove</code><span>Remove a role from a user.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="youtube">
+    <div class="content">
+      <div class="band"><h2>YouTube Feeds</h2><p>YouTube feeds announce new uploads using configured channel IDs and an announcement template.</p></div>
+      <div class="definition"><strong>Default post channel</strong><span>Used when a feed does not define its own post channel.</span></div>
+      <div class="definition"><strong>Check interval</strong><span>How frequently the feed checker polls for new uploads.</span></div>
+      <div class="definition"><strong>Last video ID</strong><span>Stored per feed to avoid reposting the same upload.</span></div>
+      <div class="command"><code>/yt list</code><span>List configured feeds.</span></div>
+      <div class="command"><code>/yt check</code><span>Force a feed check.</span></div>
+      <div class="command"><code>-yt</code><span>Legacy prefix YouTube list command.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="moderation">
+    <div class="content">
+      <div class="band"><h2>Moderation and Staff Utilities</h2><p>The bot includes slash and legacy prefix moderation commands.</p></div>
+      <div class="grid-2">
+        <div class="card"><h3>Slash commands</h3><p>Prefer slash commands for supported moderation because options are explicit and Discord permissions are clearer.</p></div>
+        <div class="card"><h3>Prefix commands</h3><p>Legacy commands remain available for cleanup, kick, mass kick, timeout, unban, warnings, and utility flows.</p></div>
+      </div>
+      <div class="command"><code>/warn / clearwarns</code><span>Manage warning records.</span></div>
+      <div class="command"><code>/ban / snap ban / snap kick</code><span>Moderation actions with reasons.</span></div>
+      <div class="command"><code>/whois</code><span>Inspect account age, join age, ID, avatar, and status.</span></div>
+      <div class="command"><code>-clean / -kick / -mkick / -mute / -unban / -warnings</code><span>Legacy prefix moderation commands.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="events">
+    <div class="content">
+      <div class="band"><h2>Event Announcement Helpers</h2><p>These commands create consistent event posts and utility reminders.</p></div>
+      <div class="command"><code>/top3te</code><span>Post top three team-event winners with a screenshot and ping role.</span></div>
+      <div class="command"><code>/top3km</code><span>Post top three KM/chest winners with chest level and screenshot.</span></div>
+      <div class="command"><code>/teameventsummary</code><span>Post a team-event summary with streaks, toppers, points, aura count, ping role, and screenshot.</span></div>
+      <div class="command"><code>/garage / sportscar</code><span>Show HCR2 mastery-related assets.</span></div>
+      <div class="command"><code>/remindme / reminders / cancelreminder</code><span>Create, list, or cancel reminders.</span></div>
+      <div class="command"><code>-announce / -temperature / -pingmessage / -team</code><span>Legacy utility commands.</span></div>
+    </div>
+  </section>
+
+  <section class="page" id="troubleshooting">
+    <div class="content">
+      <div class="band"><h2>Logs and Troubleshooting</h2><p>Use dashboard logs, status commands, and diagnostic commands to recover cleanly.</p></div>
+      <table class="table">
+        <thead><tr><th>Problem</th><th>Check</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>Dashboard login denied</td><td>OAuth setup and dashboard role</td><td>Check dashboard environment variables and role configuration.</td></tr>
+          <tr><td>Apply panel stale</td><td>Tickets dashboard settings</td><td>Save config, then sync the panel.</td></tr>
+          <tr><td>Reaction roles not updated</td><td>Panel channel/message IDs</td><td>Save config, then sync reaction roles.</td></tr>
+          <tr><td>Spreadsheet session missing</td><td>Monitored channel, enabled team, attachments</td><td>Use status and test-grouping, then post images in the correct channel.</td></tr>
+          <tr><td>Bad spreadsheet OCR</td><td>Summary preview and parsed rows</td><td>Use corrections, rebuild, or rerun Gemini.</td></tr>
+          <tr><td>Report did not post</td><td>Output channel and duplicate guard</td><td>Set output channel or regenerate with the correct anchor date.</td></tr>
+        </tbody>
+      </table>
+      <div class="command"><code>/help</code><span>Show high-level command help.</span></div>
+      <div class="command"><code>/spreadsheets test-gemini</code><span>Rerun Gemini extraction for preview debugging.</span></div>
+      <div class="command"><code>/spreadsheets test-grouping</code><span>Inspect pending screenshot grouping state.</span></div>
+      <div class="command"><code>/spreadsheets preview</code><span>Preview parsed output without posting final files.</span></div>
+      <div class="callout"><strong>Operational rule</strong><p>When correcting data, fix the event session first, rebuild the outputs, then regenerate weekly or monthly reports that depend on that event.</p></div>
+    </div>
+  </section>
+</body>
+</html>

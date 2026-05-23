@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCA Team Event Spreadsheet Guide</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 14mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #111827;
+      --muted: #5b687a;
+      --line: #d8e0eb;
+      --page: #f6f8fb;
+      --white: #ffffff;
+      --teal: #0f766e;
+      --blue: #2563eb;
+      --sky: #0891b2;
+      --green: #16a34a;
+      --amber: #d97706;
+      --orange: #f59e0b;
+      --violet: #7c3aed;
+      --rose: #be123c;
+      --soft-blue: #dbeafe;
+      --soft-green: #dcfce7;
+      --soft-amber: #fef3c7;
+      --soft-violet: #ede9fe;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10.6pt;
+      line-height: 1.48;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      font-size: 36pt;
+      line-height: 1.02;
+      letter-spacing: 0;
+      margin-bottom: 12px;
+      color: var(--white);
+    }
+
+    h2 {
+      font-size: 19pt;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--line);
+      color: #0f172a;
+    }
+
+    h3 {
+      font-size: 12.5pt;
+      margin-bottom: 6px;
+      color: #172033;
+    }
+
+    p {
+      margin-bottom: 8px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 10px 18px;
+      padding: 0;
+    }
+
+    li {
+      margin: 3px 0;
+    }
+
+    code {
+      background: #eef2ff;
+      color: #1d4ed8;
+      border: 1px solid #c7d2fe;
+      border-radius: 5px;
+      padding: 1px 4px;
+      font-family: Consolas, "Liberation Mono", monospace;
+      font-size: 9.3pt;
+    }
+
+    .page {
+      background: var(--white);
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+      margin: 0 auto 18px;
+      max-width: 188mm;
+      min-height: 267mm;
+      padding: 0;
+      page-break-after: always;
+      overflow: hidden;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    .content {
+      padding: 18mm;
+    }
+
+    .cover {
+      min-height: 267mm;
+      color: var(--white);
+      background:
+        radial-gradient(circle at 87% 10%, rgba(255,255,255,0.16), transparent 20%),
+        radial-gradient(circle at 7% 85%, rgba(255,255,255,0.12), transparent 24%),
+        linear-gradient(135deg, #0f766e 0%, #2563eb 55%, #7c3aed 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 22mm;
+    }
+
+    .cover-kicker {
+      display: inline-block;
+      width: fit-content;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 999px;
+      padding: 7px 13px;
+      font-size: 9pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      background: rgba(255,255,255,0.12);
+    }
+
+    .cover-subtitle {
+      max-width: 135mm;
+      font-size: 14pt;
+      color: #e0f2fe;
+      margin-bottom: 28px;
+    }
+
+    .cover-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      max-width: 148mm;
+    }
+
+    .cover-card {
+      border: 1px solid rgba(255,255,255,0.22);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.12);
+      padding: 11px 12px;
+    }
+
+    .cover-card strong {
+      display: block;
+      font-size: 11pt;
+      margin-bottom: 2px;
+    }
+
+    .cover-card span {
+      color: #e0f2fe;
+      font-size: 9.4pt;
+    }
+
+    .cover-footer {
+      color: #d1fae5;
+      font-size: 10pt;
+    }
+
+    .toc {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .toc-item {
+      border-left: 5px solid var(--blue);
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 10px 11px;
+    }
+
+    .toc-item:nth-child(2n) {
+      border-left-color: var(--teal);
+    }
+
+    .toc-item:nth-child(3n) {
+      border-left-color: var(--amber);
+    }
+
+    .toc-item strong {
+      display: block;
+      font-size: 11pt;
+      margin-bottom: 2px;
+    }
+
+    .toc-item span {
+      color: var(--muted);
+      font-size: 9.4pt;
+    }
+
+    .band {
+      margin: -18mm -18mm 14px;
+      padding: 14mm 18mm 9mm;
+      color: var(--white);
+      background: linear-gradient(100deg, var(--teal), var(--blue), var(--violet));
+    }
+
+    .band h2 {
+      color: var(--white);
+      border: 0;
+      margin: 0 0 5px;
+      padding: 0;
+    }
+
+    .band p {
+      max-width: 145mm;
+      color: #d1fae5;
+      margin-bottom: 0;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 11px 12px;
+      break-inside: avoid;
+    }
+
+    .card.teal {
+      border-top: 5px solid var(--teal);
+    }
+
+    .card.blue {
+      border-top: 5px solid var(--blue);
+    }
+
+    .card.amber {
+      border-top: 5px solid var(--amber);
+    }
+
+    .card.violet {
+      border-top: 5px solid var(--violet);
+    }
+
+    .callout {
+      border: 1px solid #bae6fd;
+      border-left: 6px solid var(--sky);
+      border-radius: 8px;
+      background: #f0f9ff;
+      padding: 11px 12px;
+      margin: 10px 0;
+      break-inside: avoid;
+    }
+
+    .warning {
+      border-color: #fed7aa;
+      border-left-color: var(--orange);
+      background: #fff7ed;
+    }
+
+    .success {
+      border-color: #bbf7d0;
+      border-left-color: var(--green);
+      background: #f0fdf4;
+    }
+
+    .definition {
+      display: grid;
+      grid-template-columns: 32mm 1fr;
+      gap: 9px;
+      border-bottom: 1px solid var(--line);
+      padding: 7px 0;
+    }
+
+    .definition strong {
+      color: #0f172a;
+    }
+
+    .definition span {
+      color: #334155;
+    }
+
+    .workflow {
+      counter-reset: step;
+      display: grid;
+      gap: 8px;
+    }
+
+    .step {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 9px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      background: #ffffff;
+      break-inside: avoid;
+    }
+
+    .step:before {
+      content: counter(step);
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      color: #ffffff;
+      background: linear-gradient(135deg, var(--teal), var(--blue));
+    }
+
+    .sample-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 9px 0 12px;
+      font-size: 9.5pt;
+      break-inside: avoid;
+    }
+
+    .sample-table th {
+      color: #ffffff;
+      text-align: left;
+      padding: 7px;
+      background: #1f2937;
+      border: 1px solid #111827;
+    }
+
+    .sample-table td {
+      padding: 6px 7px;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+    }
+
+    .sample-table tr:nth-child(even) td {
+      background: #eff6ff;
+    }
+
+    .sample-table .hi {
+      background: #fef08a;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .sample-table .kab {
+      color: #ffffff;
+      background: #0f7dba;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .command {
+      border: 1px solid #c7d2fe;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 8px 10px;
+      margin: 7px 0;
+      break-inside: avoid;
+    }
+
+    .command code {
+      display: block;
+      width: 100%;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      color: #172554;
+      font-size: 9.6pt;
+      white-space: normal;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0 12px;
+    }
+
+    .tag {
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #0f172a;
+      background: var(--soft-blue);
+    }
+
+    .tag.green {
+      background: var(--soft-green);
+    }
+
+    .tag.amber {
+      background: var(--soft-amber);
+    }
+
+    .tag.violet {
+      background: var(--soft-violet);
+    }
+
+    .footer-note {
+      color: var(--muted);
+      font-size: 8.8pt;
+      margin-top: 16px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+      }
+
+      .page {
+        box-shadow: none;
+        border: 0;
+        margin: 0;
+        max-width: none;
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div>
+      <div class="cover-kicker">DCA Bot Operations Guide</div>
+      <h1>Team Event Spreadsheets and Reports</h1>
+      <p class="cover-subtitle">A practical guide for submitting screenshots, reading generated outputs, correcting OCR mistakes, and using weekly or monthly Hill Climb Racing 2 team-event reports.</p>
+      <div class="cover-grid">
+        <div class="cover-card"><strong>For Players</strong><span>How to submit screenshots cleanly and understand the images the bot posts.</span></div>
+        <div class="cover-card"><strong>For Staff</strong><span>How to fix names, teams, placements, points, scores, and report periods.</span></div>
+        <div class="cover-card"><strong>For Admins</strong><span>How monitored channels, output channels, access roles, and Gemini settings work.</span></div>
+        <div class="cover-card"><strong>For Reports</strong><span>How blue kills, KAB, missed events, weekly tables, and monthly rollups are calculated.</span></div>
+      </div>
+    </div>
+    <div class="cover-footer">Generated for DC-Bot-V2. Keep this guide with the bot documentation and update it when spreadsheet commands change.</div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Contents</h2>
+        <p>Use this as a quick map for staff training, handover notes, and troubleshooting.</p>
+      </div>
+      <div class="toc">
+        <div class="toc-item"><strong>1. System Overview</strong><span>What the bot extracts and which files it produces.</span></div>
+        <div class="toc-item"><strong>2. Setup Requirements</strong><span>Channels, access roles, team aliases, roster aliases, and Gemini settings.</span></div>
+        <div class="toc-item"><strong>3. Screenshot Submission</strong><span>How users should post images for best results.</span></div>
+        <div class="toc-item"><strong>4. Event Outputs</strong><span>XLSX files, spreadsheet images, summary charts, and session summaries.</span></div>
+        <div class="toc-item"><strong>5. Weekly Reports</strong><span>Blue-kill grids, enemy team columns, event counts, total kills, max kills, and KAB.</span></div>
+        <div class="toc-item"><strong>6. Monthly Reports</strong><span>Longer-term score, points, attendance, and blue-kill rollups.</span></div>
+        <div class="toc-item"><strong>7. Commands</strong><span>Normal, staff, correction, report, and temporary diagnostic commands.</span></div>
+        <div class="toc-item"><strong>8. Corrections</strong><span>How to fix OCR mistakes safely and rebuild generated files.</span></div>
+        <div class="toc-item"><strong>9. Troubleshooting</strong><span>Common problems and what to check first.</span></div>
+        <div class="toc-item"><strong>10. Best Practices</strong><span>Operational habits that keep reports accurate.</span></div>
+      </div>
+
+      <h2 style="margin-top:18px;">1. System Overview</h2>
+      <p>The team-event spreadsheet system converts Hill Climb Racing 2 team-event screenshots into structured Discord reports. A user posts one or more screenshots in a configured monitored channel. The bot groups the images into a session, sends them through Gemini Flash, parses the event data, applies staff corrections if any exist, and generates files.</p>
+
+      <div class="grid-3">
+        <div class="card teal"><h3>Input</h3><p>Team-event screenshots, including standings, podium screens, score summaries, and ranking lists.</p></div>
+        <div class="card blue"><h3>Processing</h3><p>Gemini extracts ranks, names, scores, event points, team labels, team scores, and visible metadata.</p></div>
+        <div class="card amber"><h3>Output</h3><p>The bot posts an XLSX workbook, a spreadsheet-style image, a chart image, and period reports.</p></div>
+      </div>
+
+      <div class="callout success">
+        <strong>Current visual behavior:</strong> event spreadsheet images show own-team rows only, hide unnecessary Team and Type columns, and use colorful metric formatting. Weekly reports use a blue-kill grid with one event/enemy column per included session.
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Setup Requirements</h2>
+        <p>These settings decide which screenshots are captured, who can manage them, and where final files are posted.</p>
+      </div>
+
+      <div class="definition"><strong>Enabled</strong><span>The spreadsheet module and each individual spreadsheet team must be enabled before screenshots are captured.</span></div>
+      <div class="definition"><strong>Monitored channel</strong><span>The Discord channel where users post event screenshots. Only images in this channel are captured for that team.</span></div>
+      <div class="definition"><strong>Output channel</strong><span>The channel where final files and automatic reports are posted. If not set, output falls back to the submission channel for some flows.</span></div>
+      <div class="definition"><strong>Access role</strong><span>Members with this role can use spreadsheet commands for the team. Server administrators always have access.</span></div>
+      <div class="definition"><strong>Own team aliases</strong><span>Names Gemini may see for the configured team. These help classify rows as own-team rows.</span></div>
+      <div class="definition"><strong>Own player aliases</strong><span>Known player names that should be treated as own-team players even if the screenshot row is ambiguous.</span></div>
+      <div class="definition"><strong>Auto process</strong><span>When enabled, the bot automatically processes the session after the grouping window ends.</span></div>
+      <div class="definition"><strong>Grouping window</strong><span>The number of minutes during which images from the same user and channel are grouped into one pending session.</span></div>
+
+      <h2 style="margin-top:16px;">Recommended Admin Defaults</h2>
+      <table class="sample-table">
+        <thead><tr><th>Setting</th><th>Recommended Value</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td>Session window</td><td>1 minute</td><td>Keeps separate event submissions from merging accidentally.</td></tr>
+          <tr><td>Output format</td><td>XLSX</td><td>Best for staff editing, archiving, and sharing.</td></tr>
+          <tr><td>Gemini model</td><td>gemini-2.5-flash</td><td>Fast structured extraction for screenshot batches.</td></tr>
+          <tr><td>Timeout</td><td>300 seconds</td><td>Allows larger screenshot groups to finish.</td></tr>
+          <tr><td>Retries</td><td>4</td><td>Handles temporary API failures or rate limits.</td></tr>
+          <tr><td>Raw data retention</td><td>31 days</td><td>Keeps audit data temporarily without storing it forever.</td></tr>
+          <tr><td>Local image retention</td><td>7 days</td><td>Bounds any generated image leftovers that were not removed immediately after upload.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout warning">
+        <strong>Access note:</strong> spreadsheet commands are not public. A member must be an administrator or have the configured access role for that spreadsheet team.
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Screenshot Submission Workflow</h2>
+        <p>The cleaner the input screenshots are, the fewer corrections staff need to make afterward.</p>
+      </div>
+
+      <div class="workflow">
+        <div class="step"><div><h3>Post in the monitored channel</h3><p>Only screenshots posted in the configured monitored channel are captured. Screenshots posted elsewhere are ignored by the spreadsheet system.</p></div></div>
+        <div class="step"><div><h3>Use one Discord user per submission</h3><p>The grouping logic groups images by user and channel. If multiple users post parts of the same event, the bot may create separate sessions.</p></div></div>
+        <div class="step"><div><h3>Post all event screenshots close together</h3><p>Images sent within the grouping window are appended to the same pending session. Waiting too long can split the event into multiple sessions.</p></div></div>
+        <div class="step"><div><h3>Include useful screens</h3><p>Best results usually come from final standings, team score summaries, podium screens, and clear rank/player/score rows.</p></div></div>
+        <div class="step"><div><h3>Wait for processing</h3><p>If auto-process is enabled, the bot runs after the grouping timer ends. Otherwise, staff can run <code>/spreadsheets generate</code>.</p></div></div>
+      </div>
+
+      <h2 style="margin-top:18px;">Screenshot Quality Checklist</h2>
+      <div class="grid-2">
+        <div class="card teal"><h3>Good Screenshots</h3><ul><li>Readable rank rows</li><li>Visible player names</li><li>Visible scores or event points</li><li>Visible own/enemy team context</li><li>All pages needed for the full event</li></ul></div>
+        <div class="card amber"><h3>Avoid</h3><ul><li>Unrelated images in the same grouping window</li><li>Heavy crops that hide ranks or names</li><li>Duplicate screenshots unless needed</li><li>Multiple users splitting one event submission</li><li>Posting a new event before the previous session is done</li></ul></div>
+      </div>
+
+      <div class="callout">
+        <strong>Practical rule:</strong> if staff would need the image to understand the event manually, include it. If it is unrelated to the event result, leave it out.
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Event Outputs</h2>
+        <p>Each processed event can produce a workbook, a clean visual table, and a chart.</p>
+      </div>
+
+      <div class="grid-3">
+        <div class="card teal"><h3>XLSX Workbook</h3><p>Full data output with Summary, Results, and Attendance sheets. This is the best artifact for archiving and detailed review.</p></div>
+        <div class="card blue"><h3>Spreadsheet Image</h3><p>A cleaner visual table for Discord. It is uploaded to Discord and then removed from local bot storage.</p></div>
+        <div class="card violet"><h3>Chart Image</h3><p>Compares own/enemy score, own/enemy event points, and placement buckets. It can be rebuilt from stored parsed session data.</p></div>
+      </div>
+
+      <div class="callout success">
+        <strong>Storage behavior:</strong> source screenshots are temporary processing inputs. Generated spreadsheet and report images are delivery files, so the bot deletes local copies after upload and prunes leftovers by local image retention.
+      </div>
+
+      <h2 style="margin-top:18px;">Event Spreadsheet Image Columns</h2>
+      <table class="sample-table">
+        <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Rank</td><td>The player placement in the event.</td></tr>
+          <tr><td>Player</td><td>The own-team driver name.</td></tr>
+          <tr><td>Pts</td><td>Event points normalized from the HCR2 rank table where applicable.</td></tr>
+          <tr><td>Score</td><td>The driver's event score.</td></tr>
+          <tr><td>Blues</td><td>Number of opponents ranked below that driver.</td></tr>
+          <tr><td>Blue %</td><td>Percentage of possible opponents beaten.</td></tr>
+          <tr><td>#KAB</td><td>1 when the player ranked above every opponent, otherwise 0.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Session Summary</h2>
+      <p>The summary command shows the event name, session ID, parsed player counts, own/enemy score totals, top 10 counts, KAB players, and best own-team rows. It is the fastest way to review whether the bot understood the event before staff correct anything.</p>
+
+      <div class="command"><code>/spreadsheets summary team:&lt;team&gt; session_id:&lt;id&gt;</code></div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Weekly Reports</h2>
+        <p>Weekly reports are built around blue kills and event attendance for a single team-event name.</p>
+      </div>
+
+      <p>The weekly report includes processed sessions from the selected week that match the same team-event name. If a player is known from the roster or previous own-team rows but misses an event, that event is scored as zero.</p>
+
+      <div class="tag-row">
+        <span class="tag">One column per event</span>
+        <span class="tag green">Enemy team name in header</span>
+        <span class="tag amber">Opponent count under team</span>
+        <span class="tag violet">Sorted by blue kills</span>
+      </div>
+
+      <table class="sample-table">
+        <thead>
+          <tr><th>Rank</th><th>Driver</th><th>GER</th><th>MID</th><th>M!F</th><th>%Kill</th><th>Total</th><th>Max</th><th>#KAB</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>hype</td><td class="hi">49</td><td class="hi">46</td><td class="hi">49</td><td>100%</td><td>144</td><td>144</td><td class="kab">3</td></tr>
+          <tr><td>2</td><td>Cobus</td><td>47</td><td>45</td><td class="hi">49</td><td>98%</td><td>141</td><td>144</td><td class="kab">1</td></tr>
+          <tr><td>3</td><td>Drago</td><td>43</td><td>42</td><td>46</td><td>91%</td><td>131</td><td>144</td><td>0</td></tr>
+        </tbody>
+      </table>
+
+      <h2>How To Read It</h2>
+      <div class="definition"><strong>Enemy columns</strong><span>Each enemy team column represents one included event/session. The number below the enemy name is the possible blues for that event.</span></div>
+      <div class="definition"><strong>Player cells</strong><span>Each value is how many opponents the player ranked above in that event.</span></div>
+      <div class="definition"><strong>%Kill</strong><span>Total blues killed divided by total possible blues across the included events.</span></div>
+      <div class="definition"><strong>Total</strong><span>The player's total blues killed across the report.</span></div>
+      <div class="definition"><strong>Max</strong><span>The maximum possible blues for that player across attended and roster-counted events.</span></div>
+      <div class="definition"><strong>#KAB</strong><span>The number of events where the player killed all possible blues.</span></div>
+
+      <div class="callout success">
+        <strong>Ranking behavior:</strong> weekly report ranks are based primarily on total blues killed. Ties share the same rank when their total blue-kill count matches.
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Monthly Reports and Attendance</h2>
+        <p>Monthly reports provide broader performance tracking across all processed sessions in a month.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="card blue"><h3>Monthly Report Focus</h3><ul><li>Total score</li><li>Total event points</li><li>Total blues killed</li><li>Blue kill percentage</li><li>KAB count</li><li>Missed and attended event counts</li></ul></div>
+        <div class="card violet"><h3>Attendance Logic</h3><ul><li>The bot learns own-team players from configured aliases and historical processed sessions.</li><li>Known players missing from an event receive zero for that event.</li><li>The Attendance sheet records attended and missed players.</li></ul></div>
+      </div>
+
+      <h2 style="margin-top:18px;">Automatic Report Timing</h2>
+      <div class="definition"><strong>Weekly</strong><span>Posted automatically when a new processed session has a different event name than the previous processed session. This indicates the prior event has ended.</span></div>
+      <div class="definition"><strong>Monthly</strong><span>Generated during maintenance after month end. Staff can force monthly generation when needed.</span></div>
+      <div class="definition"><strong>Duplicate guard</strong><span>Automatic report posting tracks emitted period keys so the same report is not posted repeatedly unless staff forces regeneration.</span></div>
+
+      <div class="callout">
+        <strong>Anchor dates:</strong> report commands accept an optional <code>anchor_date</code>. Any date inside the target week or month can be used.
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Command Reference</h2>
+        <p>These are the main slash commands used by staff and admins.</p>
+      </div>
+
+      <h2>Status and Session Commands</h2>
+      <div class="command"><code>/spreadsheets status team:&lt;team&gt;</code><p>Shows team setup, monitored/output channels, access role, grouping window, Gemini settings, retention, output format, and session counts.</p></div>
+      <div class="command"><code>/spreadsheets sessions team:&lt;team&gt;</code><p>Lists the 10 most recent spreadsheet sessions for that team.</p></div>
+      <div class="command"><code>/spreadsheets summary team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Shows parsed summary text for a pending, failed, or processed session.</p></div>
+
+      <h2>Generation and Files</h2>
+      <div class="command"><code>/spreadsheets generate team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Processes or refreshes a screenshot session. If no session ID is given, it uses the latest matching session.</p></div>
+      <div class="command"><code>/spreadsheets generate team:&lt;team&gt; rerun_gemini:true</code><p>Downloads the source images and runs Gemini extraction again.</p></div>
+      <div class="command"><code>/spreadsheets file team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Returns the generated XLSX or FODS spreadsheet file.</p></div>
+      <div class="command"><code>/spreadsheets chart team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Returns the generated summary chart image.</p></div>
+
+      <h2>Report Commands</h2>
+      <div class="command"><code>/spreadsheets weekly team:&lt;team&gt; anchor_date:YYYY-MM-DD</code><p>Builds the weekly report for the week containing the anchor date.</p></div>
+      <div class="command"><code>/spreadsheets monthly team:&lt;team&gt; anchor_date:YYYY-MM-DD</code><p>Builds the monthly report for the month containing the anchor date.</p></div>
+      <div class="command"><code>/spreadsheets regenerate-weekly team:&lt;team&gt;</code><p>Regenerates and posts the weekly report to the configured output channel.</p></div>
+      <div class="command"><code>/spreadsheets regenerate-monthly team:&lt;team&gt;</code><p>Regenerates and posts the monthly report to the configured output channel.</p></div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Corrections and Rebuilds</h2>
+        <p>Corrections are stored on the session, reapplied to parsed data, and then outputs are rebuilt.</p>
+      </div>
+
+      <div class="command"><code>/spreadsheets correct-name team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; value:&lt;name&gt;</code><p>Corrects a parsed player name.</p></div>
+      <div class="command"><code>/spreadsheets correct-team team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; team_type:Own team</code><p>Marks a row as own team.</p></div>
+      <div class="command"><code>/spreadsheets correct-team team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; team_type:Opponent value:&lt;team label&gt;</code><p>Marks a row as opponent and optionally sets the opponent label.</p></div>
+      <div class="command"><code>/spreadsheets correct-placement team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; placement:&lt;new rank&gt;</code><p>Corrects the placement/rank for a row.</p></div>
+      <div class="command"><code>/spreadsheets correct-points team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; field:Score value:&lt;score&gt;</code><p>Corrects either score or event points.</p></div>
+      <div class="command"><code>/spreadsheets correct-event-name team:&lt;team&gt; session_id:&lt;id&gt; value:&lt;event name&gt;</code><p>Corrects the event title used in files and reports.</p></div>
+      <div class="command"><code>/spreadsheets rebuild team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Rebuilds output files from existing parsed Gemini data and stored corrections.</p></div>
+
+      <div class="callout warning">
+        <strong>Correction targeting:</strong> correction commands use the visible placement/rank row where possible. If no matching rank is found, the code falls back to row order. Always check the summary after correcting.
+      </div>
+
+      <h2>Generic Correction Command</h2>
+      <p>The generic command can correct player name, team name, placement, points, score, team type, or event name.</p>
+      <div class="command"><code>/spreadsheets correct team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; field:&lt;field&gt; value:&lt;replacement&gt;</code></div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="content">
+      <div class="band">
+        <h2>Diagnostics, Troubleshooting, and Best Practices</h2>
+        <p>Use these checks when a session does not look right or a report is missing.</p>
+      </div>
+
+      <h2>Temporary Diagnostic Commands</h2>
+      <div class="command"><code>/spreadsheets test-gemini team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Runs Gemini extraction for a pending, processed, or failed session and returns a preview.</p></div>
+      <div class="command"><code>/spreadsheets test-grouping team:&lt;team&gt;</code><p>Shows pending sessions and grouping-window state.</p></div>
+      <div class="command"><code>/spreadsheets preview team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Shows parsed output without posting final files.</p></div>
+      <div class="command"><code>/spreadsheets force-weekly team:&lt;team&gt;</code><p>Forces weekly report posting.</p></div>
+      <div class="command"><code>/spreadsheets force-monthly team:&lt;team&gt;</code><p>Forces monthly report posting.</p></div>
+      <div class="command"><code>/spreadsheets rebuild-event team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Temporary alias for rebuilding one event output.</p></div>
+
+      <h2>Common Problems</h2>
+      <table class="sample-table">
+        <thead><tr><th>Problem</th><th>What To Check</th><th>Likely Fix</th></tr></thead>
+        <tbody>
+          <tr><td>No session appears</td><td>Wrong channel, disabled team, or no image attachments</td><td>Check <code>/spreadsheets status</code> and monitored channel config.</td></tr>
+          <tr><td>Images split into multiple sessions</td><td>Posted after grouping window or from different users</td><td>Use <code>test-grouping</code>, then generate the correct session manually.</td></tr>
+          <tr><td>Bad player/team classification</td><td>Ambiguous screenshot row or missing aliases</td><td>Use <code>correct-team</code> and update aliases for future events.</td></tr>
+          <tr><td>Bad event name</td><td>Gemini read title incorrectly</td><td>Use <code>correct-event-name</code>, then rebuild/report again.</td></tr>
+          <tr><td>No report posts</td><td>Missing output channel, no sessions, duplicate guard, or unavailable channel</td><td>Set output channel or use regenerate commands with the right anchor date.</td></tr>
+          <tr><td>Enemy name includes scores</td><td>OCR merged team score text into the label</td><td>The cleaner strips own team and score fragments, but staff can still correct team labels if needed.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Best Practices</h2>
+      <div class="grid-2">
+        <div class="card teal"><h3>For Users</h3><ul><li>Post all screenshots together.</li><li>Use the correct monitored channel.</li><li>Include clear standings and score screens.</li><li>Do not mix unrelated images into the same submission.</li></ul></div>
+        <div class="card blue"><h3>For Staff</h3><ul><li>Review summaries before trusting reports.</li><li>Correct names and team assignments early.</li><li>Regenerate reports after important corrections.</li><li>Keep own-player aliases current.</li></ul></div>
+      </div>
+
+      <div class="footer-note">
+        This guide documents the spreadsheet workflow present in DC-Bot-V2 at the time it was generated. If command names, report visuals, or correction behavior changes, regenerate this PDF from the HTML source.
+      </div>
+    </div>
+  </section>
+</body>
+</html>

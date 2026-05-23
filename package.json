@@ -1,0 +1,12 @@
+{
+  "name": "dca-bot-suite",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Repository wrapper for the separate DCA bot and dashboard apps",
+  "scripts": {
+    "start:bot": "npm --prefix bot start",
+    "start:dashboard": "npm --prefix dashboard start",
+    "deploy:commands": "npm --prefix bot run deploy:commands",
+    "test:spreadsheets": "npm --prefix bot run test:spreadsheets"
+  }
+}
