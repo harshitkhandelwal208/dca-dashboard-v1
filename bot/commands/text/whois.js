@@ -6,18 +6,28 @@ module.exports = {
   async execute(message, args) {
     try {
       let user = message.mentions.users.first() || message.author;
+      user = await user.fetch(true);
+
       let member = await message.guild.members.fetch(user.id).catch(() => null);
 
       const createdAt = `<t:${Math.floor(user.createdTimestamp / 1000)}:f>`;
       const joinedAt = member ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:f>` : "Couldn't find out";
-      
+
       let customStatus = "No custom status";
       if (member?.presence?.activities?.length) {
-        const customActivity = member.presence.activities.find(act => act.type === ActivityType.Custom);
+        const customActivity = member.presence.activities.find(
+          (act) => act.type === ActivityType.Custom
+        );
         if (customActivity?.state) {
           customStatus = `Custom Status: "${customActivity.state}"`;
         }
       }
+
+      const bannerUrl = user.bannerURL({ dynamic: true, size: 1024 });
+      const embedColor =
+        (member?.displayHexColor && member.displayHexColor !== "#000000")
+          ? member.displayHexColor
+          : user.accentColor || "Blue";
 
       const embed = new EmbedBuilder()
         .setTitle(`${user.username}`)
@@ -25,18 +35,24 @@ module.exports = {
         .addFields(
           { name: "ID", value: user.id, inline: true },
           { name: "Avatar", value: `[Link](${user.displayAvatarURL({ dynamic: true, size: 1024 })})`, inline: true },
+          { name: "Banner", value: bannerUrl ? `[Link](${bannerUrl})` : "No banner", inline: true },
+          { name: "Accent Color", value: user.accentColor ? `#${user.accentColor.toString(16).padStart(6, "0").toUpperCase()}` : "None", inline: true },
           { name: "Account Created", value: createdAt, inline: true },
           { name: "Account Age", value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
           { name: "Joined Server At", value: joinedAt, inline: true },
           { name: "Join Server Age", value: member ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : "Couldn't find out", inline: true },
           { name: "Status", value: customStatus, inline: false }
         )
-        .setColor("Blue");
+        .setColor(embedColor);
+
+      if (bannerUrl) {
+        embed.setImage(bannerUrl);
+      }
 
       message.reply({ embeds: [embed] });
     } catch (error) {
       console.error("Error in whois command:", error);
-      message.reply("❌ Something went wrong while fetching user information.");
+      message.reply("Something went wrong while fetching user information.");
     }
   },
 };
