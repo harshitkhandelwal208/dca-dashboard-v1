@@ -505,14 +505,16 @@ Invoke-Az webapp deploy `
     --resource-group $ResourceGroup `
     --name $BotAppName `
     --src-path $botZip `
-    --type zip
+    --type zip `
+    --clean true
 
 Write-Host "Deploying dashboard..."
 Invoke-Az webapp deploy `
     --resource-group $ResourceGroup `
     --name $DashboardAppName `
     --src-path $dashboardZip `
-    --type zip
+    --type zip `
+    --clean true
 
 Write-Host ""
 Write-Host "Deployment submitted."

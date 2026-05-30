@@ -77,7 +77,12 @@ async function sendLogToDiscord(client, log, config) {
     if (log.targetId) embed.addFields({ name: "Target", value: `<@${log.targetId}>`, inline: true });
     if (log.metadata?.threadId) embed.addFields({ name: "Thread", value: `<#${log.metadata.threadId}>`, inline: true });
 
-    await channel.send({ embeds: [embed] });
+    const content = log.title === "Member Left" && log.targetId ? `<@${log.targetId}>` : "";
+    await channel.send({
+        content,
+        embeds: [embed],
+        allowedMentions: content ? { users: [log.targetId], roles: [] } : { parse: [] }
+    });
 }
 
 async function logAction(client, entry) {

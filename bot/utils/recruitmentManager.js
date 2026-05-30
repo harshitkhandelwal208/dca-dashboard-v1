@@ -1038,6 +1038,13 @@ async function claimTicket(interaction) {
         return;
     }
 
+    if (ticket.claimedById) {
+        await respondEphemeral(interaction, ticket.claimedById === interaction.user.id
+            ? "You have already claimed this ticket."
+            : `This ticket is already claimed by <@${ticket.claimedById}>.`);
+        return;
+    }
+
     const updated = await updateTicket(thread.id, {
         claimedById: interaction.user.id,
         claimedByTag: displayTag(interaction.user)

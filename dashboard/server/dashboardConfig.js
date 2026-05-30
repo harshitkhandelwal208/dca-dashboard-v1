@@ -102,7 +102,7 @@ const DEFAULT_CONFIG = {
     leave: {
         enabled: true,
         channelId: "839905184154517597",
-        message: "**{tag}** has left the server."
+        message: "{member} has left the server."
     },
     recruitment: {
         enabled: true,
@@ -170,6 +170,7 @@ const DEFAULT_CONFIG = {
     youtube: {
         enabled: true,
         checkIntervalMinutes: 5,
+        maxAnnouncementAgeHours: 72,
         defaultChannelId: "",
         announcementTemplate: "**{name}** uploaded a new video!\n{url}",
         feeds: DEFAULT_YOUTUBE_FEEDS
@@ -496,13 +497,29 @@ function normalizeSpreadsheets(input, fallback) {
 function normalizeYoutubeFeed(input, fallback, index) {
     const raw = input && typeof input === "object" ? input : {};
     const base = fallback && typeof fallback === "object" ? fallback : {};
+    const sentVideoIds = cleanStringList(
+        [
+            ...(Array.isArray(raw.sentVideoIds) ? raw.sentVideoIds : []),
+            ...(Array.isArray(raw.postedVideoIds) ? raw.postedVideoIds : []),
+            ...(Array.isArray(raw.seenVideoIds) ? raw.seenVideoIds : []),
+            ...(Array.isArray(base.sentVideoIds) ? base.sentVideoIds : []),
+            raw.lastVideoId,
+            base.lastVideoId
+        ],
+        [],
+        50,
+        80
+    );
 
     return {
         id: cleanName(raw.id, base.id || "", 120),
         name: cleanName(raw.name, base.name || `Feed ${index + 1}`, 80),
         channelId: cleanSnowflake(raw.channelId, base.channelId || ""),
         enabled: cleanBoolean(raw.enabled, base.enabled !== false),
-        lastVideoId: cleanOptionalText(raw.lastVideoId, base.lastVideoId || "", 80)
+        lastVideoId: cleanOptionalText(raw.lastVideoId, base.lastVideoId || sentVideoIds[0] || "", 80),
+        lastPublishedAt: cleanOptionalText(raw.lastPublishedAt, base.lastPublishedAt || "", 80),
+        lastCheckedAt: cleanOptionalText(raw.lastCheckedAt, base.lastCheckedAt || "", 80),
+        sentVideoIds
     };
 }
 
@@ -514,6 +531,7 @@ function normalizeYoutube(input, fallback) {
     return {
         enabled: cleanBoolean(raw.enabled, base.enabled !== false),
         checkIntervalMinutes: cleanNumber(raw.checkIntervalMinutes, base.checkIntervalMinutes || 5, 1, 1440),
+        maxAnnouncementAgeHours: cleanNumber(raw.maxAnnouncementAgeHours, base.maxAnnouncementAgeHours || 72, 1, 720),
         defaultChannelId: cleanSnowflake(raw.defaultChannelId, base.defaultChannelId || ""),
         announcementTemplate: cleanText(raw.announcementTemplate, base.announcementTemplate, 1200),
         feeds: feeds.slice(0, 50).map((feed, index) => normalizeYoutubeFeed(feed, base.feeds?.[index], index)).filter(feed => feed.id)

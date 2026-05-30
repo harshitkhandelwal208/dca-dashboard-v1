@@ -55,6 +55,70 @@ client.isBotReady = false;
 client.commands = new Collection();
 client.slashCommands = new Collection();
 
+const activeButtonActions = new Map();
+const BUTTON_ACTION_TTL_MS = 15 * 60 * 1000;
+
+function buttonActionKey(interaction) {
+    const customId = interaction.customId || "";
+
+    if (customId === "recruitment:apply") {
+        return `button:${interaction.guildId}:${interaction.user.id}:${customId}`;
+    }
+
+    if (customId === "recruitment:claim") {
+        return `button:${interaction.guildId}:${interaction.channelId}:${customId}`;
+    }
+
+    if (customId === "recruitment:close") {
+        return `button:${interaction.guildId}:${interaction.channelId}:${interaction.user.id}:${customId}`;
+    }
+
+    if (customId.startsWith("recruitment:close-team:")) {
+        return `button:${interaction.guildId}:${interaction.channelId}:recruitment:close-team`;
+    }
+
+    if (customId.startsWith("recruitment:event:")) {
+        return `button:${interaction.guildId}:${interaction.user.id}:${customId}`;
+    }
+
+    if (customId.startsWith("recruitment:tutorial:")) {
+        return `button:${interaction.guildId}:${interaction.channelId}:${interaction.user.id}:${customId}`;
+    }
+
+    if (customId.startsWith("welcome-team:")) {
+        return `button:${interaction.guildId}:${customId}`;
+    }
+
+    return `button:${interaction.id}`;
+}
+
+async function replyActionInProgress(interaction) {
+    const payload = { content: "That button action is already being processed.", ephemeral: true };
+    if (interaction.deferred || interaction.replied) {
+        await interaction.followUp(payload).catch(() => null);
+    } else {
+        await interaction.reply(payload).catch(() => null);
+    }
+}
+
+async function withButtonActionLock(interaction, action) {
+    const key = buttonActionKey(interaction);
+    if (activeButtonActions.has(key)) {
+        await replyActionInProgress(interaction);
+        return true;
+    }
+
+    const timeout = setTimeout(() => activeButtonActions.delete(key), BUTTON_ACTION_TTL_MS);
+    activeButtonActions.set(key, timeout);
+
+    try {
+        return await action();
+    } finally {
+        clearTimeout(timeout);
+        activeButtonActions.delete(key);
+    }
+}
+
 // Load text (-) commands
 const textCommandsPath = path.join(__dirname, "commands", "text");
 if (fs.existsSync(textCommandsPath)) {
@@ -177,11 +241,16 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.isButton()) {
-        const handled = await handleRecruitmentInteraction(interaction);
-        if (handled) return;
+        const handled = await withButtonActionLock(interaction, async () => {
+            const recruitmentHandled = await handleRecruitmentInteraction(interaction);
+            if (recruitmentHandled) return true;
 
-        const welcomeHandled = await handleWelcomeTeamButton(interaction);
-        if (welcomeHandled) return;
+            const welcomeHandled = await handleWelcomeTeamButton(interaction);
+            if (welcomeHandled) return true;
+
+            return false;
+        });
+        if (handled) return;
     }
 
     if (interaction.isModalSubmit()) {

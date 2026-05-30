@@ -57,3 +57,12 @@ Pick a subscription:
 - Azure App Service builds production dependencies during zip deployment.
 - The dashboard URL will be `https://<dashboard-app-name>.azurewebsites.net/dashboard`.
 - The Discord OAuth redirect URI must exactly match `https://<dashboard-app-name>.azurewebsites.net/auth/discord/callback`.
+
+## Continuous Deployment
+
+This repo includes `.github/workflows/deploy-azure.yml`. Every push to `main` builds the dashboard, packages `bot/` and `dashboard/`, logs in to Azure with GitHub OIDC, and zip-deploys both existing App Services:
+
+- Bot: `dca-bot-31464`
+- Dashboard: `dca-dashboard-31464`
+
+The Azure identity is `dca-github-actions-deployer` in `dca-bot-rg`, with a federated credential for `harshitkhandelwal208/dca-dashboard-v1` on `main` and the `Website Contributor` role scoped to `dca-bot-rg`.

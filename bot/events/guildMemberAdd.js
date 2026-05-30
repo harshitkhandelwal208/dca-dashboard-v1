@@ -3,7 +3,6 @@ const { logAction } = require("../utils/logStore");
 const { renderMemberTemplate } = require("../utils/messageTemplates");
 const { getCommunityGuildId } = require("../utils/serverConfig");
 const { handleCommunityMemberJoin } = require("../utils/teamRoleScheduler");
-const { teamButtonsForMember } = require("../utils/welcomeRoleManager");
 
 module.exports = {
     name: "guildMemberAdd",
@@ -24,7 +23,6 @@ module.exports = {
 
             await channel.send({
                 content: renderMemberTemplate(welcome.message, member),
-                components: teamButtonsForMember(member.id, config.memberCounts.teams),
                 allowedMentions: { users: [member.id], roles: [] }
             });
 

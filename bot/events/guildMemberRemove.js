@@ -4,6 +4,12 @@ const { logAction } = require("../utils/logStore");
 const { renderMemberTemplate } = require("../utils/messageTemplates");
 const { getCommunityGuildId } = require("../utils/serverConfig");
 
+function ensureMemberMention(content, memberId) {
+    const text = String(content || "").trim();
+    const mention = `<@${memberId}>`;
+    return text.includes(mention) ? text : `${mention} ${text}`.trim();
+}
+
 module.exports = {
     name: Events.GuildMemberRemove,
     async execute(member) {
@@ -17,12 +23,15 @@ module.exports = {
             const channel = await member.guild.channels.fetch(leave.channelId);
             if (!channel?.isTextBased?.()) return;
 
-            await channel.send(renderMemberTemplate(leave.message, member));
+            await channel.send({
+                content: ensureMemberMention(renderMemberTemplate(leave.message, member), member.id),
+                allowedMentions: { users: [member.id], roles: [] }
+            });
 
             await logAction(member.client, {
                 type: "system",
                 title: "Member Left",
-                message: `**${member.user?.tag || member.id}** left the server.`,
+                message: `<@${member.id}> left the server.`,
                 guildId: member.guild.id,
                 targetId: member.id,
                 targetTag: member.user?.tag || member.user?.username || member.id,

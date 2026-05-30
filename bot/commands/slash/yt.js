@@ -44,7 +44,7 @@ module.exports = {
             await interaction.editReply(result.results
                 .map(item => {
                     if (item.error) return `**${item.name}** - error: ${item.error}`;
-                    if (item.posted) return `**${item.name}** - posted ${item.videoId}`;
+                    if (item.posted) return `**${item.name}** - posted ${item.postedCount || 1} video(s), latest ${item.videoId}`;
                     if (item.initialized) return `**${item.name}** - initialized ${item.videoId}`;
                     if (item.unchanged) return `**${item.name}** - unchanged`;
                     return `**${item.name}** - skipped: ${item.reason || "no change"}`;
