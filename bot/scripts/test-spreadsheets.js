@@ -3,7 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const ExcelJS = require("exceljs");
 const { generateSpreadsheetArtifacts } = require("../utils/calcSpreadsheet");
-const { detectRaceRowColors, parseRaceScreenshots } = require("../utils/raceOcr");
+const { detectRaceRowColors, parseRaceScreenshots, prepareImageForGemini } = require("../utils/raceOcr");
+const { classifyRecruitmentVisibleText } = require("../utils/recruitmentOcr");
 const { generatePeriodReport } = require("../utils/spreadsheetReports");
 const { cleanTeamName, sessionOpponentTeams } = require("../utils/spreadsheetMetrics");
 
@@ -33,6 +34,40 @@ async function writeRowColorFixture(filePath) {
     }).join("");
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="700" height="${rows.length * rowHeight}">${svgRows}</svg>`;
     await sharp(Buffer.from(svg)).png().toFile(filePath);
+}
+
+async function writeUncroppedStandingsFixture(filePath) {
+    const sharp = require("sharp");
+    const width = 2392;
+    const height = 1080;
+    const rows = ["#4aa3f1", "#eadf8b", "#ddd37e", "#eadf8b", "#3e9bed", "#4aa3f1", "#3e9bed"];
+    const rowHeight = 72;
+    const rowGap = 14;
+    const rowY = 310;
+    const tableX = 400;
+    const tableWidth = 1100;
+    const rowRects = rows.map((fill, index) => {
+        const y = rowY + index * (rowHeight + rowGap);
+        return [
+            `<rect x="${tableX}" y="${y}" width="${tableWidth}" height="${rowHeight}" fill="${fill}"/>`,
+            `<rect x="${tableX + 820}" y="${y + 14}" width="100" height="34" fill="rgba(0,0,0,0.22)"/>`,
+            `<text x="${tableX + 140}" y="${y + 45}" font-family="Arial" font-size="34" font-weight="700" fill="#111">Driver ${index + 1}</text>`
+        ].join("");
+    }).join("");
+    const rewards = [260, 450, 640].map(y =>
+        `<rect x="1550" y="${y}" width="350" height="130" rx="8" fill="#f2d36a"/>`
+    ).join("");
+    const svg = [
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
+        `<rect width="${width}" height="${height}" fill="#3a2a50"/>`,
+        `<rect x="0" y="0" width="260" height="${height}" fill="#201735"/>`,
+        `<rect x="${tableX}" y="210" width="${tableWidth}" height="76" fill="#5a4630"/>`,
+        rewards,
+        rowRects,
+        `<rect x="1010" y="960" width="390" height="90" fill="#4caf35"/>`,
+        `</svg>`
+    ].join("");
+    await sharp(Buffer.from(svg)).jpeg().toFile(filePath);
 }
 
 async function main() {
@@ -67,6 +102,37 @@ async function main() {
     assert.strictEqual(colorParsed.players.find(row => row.rank === 10).teamType, "own");
     assert.strictEqual(colorParsed.players.find(row => row.rank === 11).teamType, "opponent");
 
+    const uncroppedFixture = path.join(outputDir, "uncropped-standings.jpg");
+    await writeUncroppedStandingsFixture(uncroppedFixture);
+    const uncroppedHints = await detectRaceRowColors(uncroppedFixture);
+    assert.deepStrictEqual(
+        uncroppedHints.slice(0, 7).map(row => row.color),
+        ["blue", "yellow", "yellow", "yellow", "blue", "blue", "blue"],
+        "uncropped full-screen standings should be auto-cropped before row color sampling"
+    );
+    assert(
+        uncroppedHints.every(row => row.imageCrop?.source === "auto-standings-table"),
+        "row color hints from uncropped screenshots should record the automatic standings crop"
+    );
+    const preparedUncropped = await prepareImageForGemini(uncroppedFixture, { imageKind: "team-event-score" });
+    const originalMeta = await require("sharp")(uncroppedFixture).metadata();
+    const preparedMeta = await require("sharp")(preparedUncropped).metadata();
+    assert(
+        preparedMeta.width < originalMeta.width && preparedMeta.height <= originalMeta.height,
+        "uncropped screenshots should be cropped before Gemini preprocessing"
+    );
+
+    assert.strictEqual(
+        classifyRecruitmentVisibleText("Garage power 6411 Cup points Legendary S7 Season points Grand Master III Best win streak 288 Achievements").kind,
+        "driver-license",
+        "driver license screenshots should be recognized from profile labels"
+    );
+    assert.strictEqual(
+        classifyRecruitmentVisibleText("Sky-Rock Samba Final Standings WIN BONUS REWARDS 60. DC|BlackWing 20 555 NEXT").kind,
+        "team-event-score",
+        "team event score screenshots should be recognized from standings labels"
+    );
+
     const multiImageColorParsed = parseRaceScreenshots([{
         imagePath: "color-page-1.png",
         text: "",
@@ -77,10 +143,10 @@ async function main() {
         structured: {
             eventName: "Multi Image Color Fixture",
             players: [
-                { rank: 1, playerName: "WrongBlue1", teamType: "opponent", points: 4, score: 400 },
-                { rank: 2, playerName: "WrongYellow2", teamType: "own", points: 3, score: 300 },
-                { rank: 3, playerName: "DC|WrongYellow3", teamType: "own", points: 2, score: 200 },
-                { rank: 4, playerName: "WrongBlue4", teamType: "opponent", points: 1, score: 100 }
+                { rank: 1, playerName: "WrongBlue1", teamType: "opponent", points: 4, score: 400, sourceImageIndex: 1 },
+                { rank: 2, playerName: "WrongYellow2", teamType: "own", points: 3, score: 300, sourceImageIndex: 1 },
+                { rank: 3, playerName: "DC|WrongYellow3", teamType: "own", points: 2, score: 200, sourceImageIndex: 2 },
+                { rank: 4, playerName: "WrongBlue4", teamType: "opponent", points: 1, score: 100, sourceImageIndex: 2 }
             ]
         }
     }, {
@@ -94,7 +160,37 @@ async function main() {
     assert.deepStrictEqual(
         multiImageColorParsed.players.map(row => row.teamType),
         ["own", "opponent", "opponent", "own"],
-        "row color hints should map across rank-contiguous screenshots when Gemini omits sourceImageIndex"
+        "row color hints should map to the exact screenshot named by sourceImageIndex"
+    );
+
+    const unorderedNoSourceImageParsed = parseRaceScreenshots([{
+        imagePath: "unordered-page-2.png",
+        text: "",
+        rowColorHints: [
+            { rowIndex: 1, color: "blue", confidence: 0.9 },
+            { rowIndex: 2, color: "blue", confidence: 0.9 }
+        ],
+        structured: {
+            eventName: "Unordered Image Fixture",
+            players: [
+                { rank: 1, playerName: "NoSource1", teamType: "opponent", points: 4, score: 400 },
+                { rank: 2, playerName: "NoSource2", teamType: "opponent", points: 3, score: 300 },
+                { rank: 3, playerName: "NoSource3", teamType: "own", points: 2, score: 200 },
+                { rank: 4, playerName: "NoSource4", teamType: "own", points: 1, score: 100 }
+            ]
+        }
+    }, {
+        imagePath: "unordered-page-1.png",
+        text: "",
+        rowColorHints: [
+            { rowIndex: 1, color: "yellow", confidence: 0.9 },
+            { rowIndex: 2, color: "yellow", confidence: 0.9 }
+        ]
+    }], { name: "Discord", ownTeamAliases: [], ownPlayerAliases: [] });
+    assert.deepStrictEqual(
+        unorderedNoSourceImageParsed.players.map(row => row.teamType),
+        ["opponent", "opponent", "own", "own"],
+        "multi-image row color hints should not be globally remapped when screenshot order is ambiguous"
     );
 
     const teamScoreParsed = parseRaceScreenshots([{

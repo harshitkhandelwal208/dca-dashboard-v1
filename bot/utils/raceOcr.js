@@ -8,6 +8,10 @@ const DEFAULT_MAX_RETRIES = 4;
 const ROW_COLOR_SCAN_REGION = { xStart: 0.58, xEnd: 0.7 };
 const ROW_COLOR_MIN_CONFIDENCE = 0.35;
 const ROW_COLOR_STRONG_CONFIDENCE = 0.58;
+const AUTO_CROP_MIN_RATIO = 1.75;
+const TEAM_EVENT_CONTENT_CROP = { left: 0.12, top: 0, width: 0.75, height: 0.96 };
+const TEAM_EVENT_ROWS_CROP = { left: 0.167, top: 0.171, width: 0.46, height: 0.67 };
+const DRIVER_LICENSE_CONTENT_CROP = { left: 0.16, top: 0.055, width: 0.71, height: 0.84 };
 const HCR2_TEAM_EVENT_POINTS_BY_RANK = [
     300, 280, 262, 244, 228, 213, 198, 185, 173, 161,
     150, 140, 131, 122, 114, 107, 99, 93, 87, 81,
@@ -231,6 +235,64 @@ function median(values) {
         : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
+function autoCropEnabled(settings = {}) {
+    return settings.autoCropScreenshots !== false && settings.autoCrop !== false;
+}
+
+function normalizedImageKind(value) {
+    const text = normalizeForMatch(value);
+    if (/driver|licen[cs]e|profile/.test(text)) return "driver-license";
+    if (/team event|event score|score|standing|result|spreadsheet/.test(text)) return "team-event-score";
+    return "";
+}
+
+function relativeCropBox(info, crop) {
+    if (!info?.width || !info?.height) return null;
+    const left = clamp(Math.round(info.width * crop.left), 0, info.width - 2);
+    const top = clamp(Math.round(info.height * crop.top), 0, info.height - 2);
+    const width = clamp(Math.round(info.width * crop.width), 2, info.width - left);
+    const height = clamp(Math.round(info.height * crop.height), 2, info.height - top);
+    if (width >= info.width * 0.98 && height >= info.height * 0.98) return null;
+    return { left, top, width, height };
+}
+
+function autoCropBox(info, settings = {}, purpose = "gemini") {
+    if (!autoCropEnabled(settings) || !info?.width || !info?.height) return null;
+    const ratio = info.width / Math.max(1, info.height);
+    if (ratio < AUTO_CROP_MIN_RATIO || info.width < 1200 || info.height < 650) return null;
+
+    if (purpose === "row-colors") {
+        return relativeCropBox(info, TEAM_EVENT_ROWS_CROP);
+    }
+
+    const kind = normalizedImageKind(settings.imageKind || settings.kind || settings.imagePurpose);
+    if (kind === "driver-license") {
+        return relativeCropBox(info, DRIVER_LICENSE_CONTENT_CROP);
+    }
+
+    return relativeCropBox(info, TEAM_EVENT_CONTENT_CROP);
+}
+
+function annotateCrop(rows, cropBox, source) {
+    if (!cropBox) return rows;
+    return rows.map(row => ({
+        ...row,
+        imageCrop: {
+            source,
+            left: cropBox.left,
+            top: cropBox.top,
+            width: cropBox.width,
+            height: cropBox.height
+        }
+    }));
+}
+
+function preferCroppedRows(croppedRows, fullRows) {
+    if (!croppedRows.length) return false;
+    if (croppedRows.length >= 4 && fullRows.length < 4) return true;
+    return croppedRows.length >= Math.max(4, fullRows.length + 2);
+}
+
 function averagePixels(data, info, box, options = {}) {
     const channels = info.channels || 4;
     const x0 = clamp(Math.round(box.x0), 0, info.width - 1);
@@ -370,7 +432,14 @@ function detectRowColorBands(data, info, settings = {}) {
 
     if (bands.length < 2) return [];
 
-    return splitTallColorBands(bands)
+    const splitBands = splitTallColorBands(bands);
+    const typicalHeight = median(splitBands.map(band => band.end - band.start + 1));
+
+    return splitBands
+        .filter(band => {
+            if (!typicalHeight) return true;
+            return band.end - band.start + 1 >= typicalHeight * 0.45;
+        })
         .map((band, index) => {
             const height = band.end - band.start + 1;
             const stats = averagePixels(data, info, {
@@ -402,13 +471,27 @@ async function detectRaceRowColors(imagePath, settings = {}) {
     if (settings.detectRowColors === false) return [];
 
     const sharp = require("sharp");
-    const { data, info } = await sharp(imagePath, { animated: false })
-        .rotate()
+    const base = sharp(imagePath, { animated: false }).rotate();
+    const { data, info } = await base.clone()
         .ensureAlpha()
         .raw()
         .toBuffer({ resolveWithObject: true });
+    const rows = detectRowColorBands(data, info, settings);
+    const cropBox = autoCropBox(info, settings, "row-colors");
+    if (!cropBox) return rows;
 
-    return detectRowColorBands(data, info, settings);
+    const { data: cropData, info: cropInfo } = await base.clone()
+        .extract(cropBox)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    const croppedRows = annotateCrop(
+        detectRowColorBands(cropData, cropInfo, settings),
+        cropBox,
+        "auto-standings-table"
+    );
+
+    return preferCroppedRows(croppedRows, rows) ? croppedRows : rows;
 }
 
 async function detectRaceRowColorsSafe(imagePath, settings = {}) {
@@ -426,8 +509,13 @@ async function prepareImageForGemini(imagePath, settings = {}) {
         const sharp = require("sharp");
         const parsed = path.parse(imagePath);
         const outputPath = path.join(parsed.dir, `${parsed.name}.gemini.jpg`);
-        await sharp(imagePath, { animated: false })
-            .rotate()
+        let pipeline = sharp(imagePath, { animated: false }).rotate();
+        const metadata = await pipeline.clone().metadata();
+        const cropBox = autoCropBox(metadata, settings, "gemini");
+        if (cropBox) {
+            pipeline = pipeline.extract(cropBox);
+        }
+        await pipeline
             .resize({
                 width: 2400,
                 height: 2400,
@@ -648,8 +736,11 @@ function buildTeamEventPrompt(teamConfig = {}) {
         `- known own players: ${knownPlayers.length ? knownPlayers.join(", ") : "none"}`,
         "",
         "Important rules:",
+        "- Uploaded screenshots may be uncropped full game screens; focus on the team-event standings, podium, score summary, or spreadsheet area and ignore unrelated lobby/background UI.",
+        "- Images may be sent in the wrong order. Determine ordering from visible rank/place numbers and event context, not from upload order.",
         "- Identify the event name from the screenshots. Use the visible event title, not the Discord channel name.",
         "- Extract every visible ranking/player row, even from cropped screenshots or tablet screenshots.",
+        "- For every extracted player row, set sourceImageIndex to the 1-based image number where that exact row is visible.",
         "- Preserve placements/ranks exactly. Tied ranks are allowed.",
         "- Extract event points/cup points separately from total score when both are visible.",
         "- Extract the team-event point totals from podium/summary screens into metadata.ownTeamScore and metadata.opponentTeamScore. Example: Discord 1 574 vs EMPIRE 2 946 means ownTeamScore 1574 and opponentTeamScore 2946. These are not player score sums.",
@@ -713,6 +804,8 @@ function buildRecruitmentApplicationPrompt(settings = {}) {
         `- knownRecruitmentTeams: ${knownTeams.length ? knownTeams.join(", ") : "none"}`,
         "",
         "Extraction rules:",
+        "- Uploaded images may be in the wrong order or attached under the wrong prompt. Classify each image by visible content before extracting fields.",
+        "- Reject wrong screen types in imageChecks: a driver license must be an HCR2 player profile/license screen; a team-event score must be an HCR2 team-event result, standings, podium, score summary, or spreadsheet screen.",
         "- From the driver license/profile image, extract the in-game player name, previous/current team, and garage power.",
         "- Garage power can be labeled Garage Power, GP, Power, or shown as a large profile stat. Preserve the visible number.",
         "- From each team-event score screenshot, extract the visible event name and the applicant's visible rank, event points, and score when present.",
@@ -732,6 +825,13 @@ function buildRecruitmentApplicationPrompt(settings = {}) {
         "    \"rank\": \"string\",",
         "    \"eventPoints\": \"string\",",
         "    \"score\": \"string\",",
+        "    \"rawVisibleText\": \"string\"",
+        "  }],",
+        "  \"imageChecks\": [{",
+        "    \"imageIndex\": 1,",
+        "    \"kind\": \"driverLicense|teamEventScore|wrongGame|unknown\",",
+        "    \"isValidForRecruitment\": true,",
+        "    \"reason\": \"string\",",
         "    \"rawVisibleText\": \"string\"",
         "  }],",
         "  \"rawVisibleTextByImage\": [{\"imageIndex\":1, \"label\":\"string\", \"text\":\"string\"}]",
@@ -760,13 +860,19 @@ async function extractTeamEventSession(imagePaths, teamConfig = {}, settings = {
     const parts = [{ text: buildTeamEventPrompt(teamConfig) }];
 
     for (let index = 0; index < imagePaths.length; index += 1) {
-        const preparedPath = await prepareImageForGemini(imagePaths[index], settings);
+        const preparedPath = await prepareImageForGemini(imagePaths[index], {
+            ...settings,
+            imageKind: "team-event-score"
+        });
         prepared.push(preparedPath);
         parts.push({ text: `Image ${index + 1}: ${path.basename(imagePaths[index])}` });
         parts.push(await imagePart(preparedPath));
     }
 
-    const rowColorHintsPromise = Promise.all(imagePaths.map(imagePath => detectRaceRowColorsSafe(imagePath, settings)));
+    const rowColorHintsPromise = Promise.all(imagePaths.map(imagePath => detectRaceRowColorsSafe(imagePath, {
+        ...settings,
+        imageKind: "team-event-score"
+    })));
     const [response, rowColorHints] = await Promise.all([
         callGemini(parts, settings),
         rowColorHintsPromise
@@ -811,7 +917,10 @@ async function extractRecruitmentApplication(images, settings = {}) {
 
     for (let index = 0; index < inputs.length; index += 1) {
         const input = inputs[index];
-        const preparedPath = await prepareImageForGemini(input.path, settings);
+        const preparedPath = await prepareImageForGemini(input.path, {
+            ...settings,
+            imageKind: input.kind
+        });
         prepared.push(preparedPath);
         parts.push({ text: `${input.label} (${input.kind}): ${path.basename(input.path)}` });
         parts.push(await imagePart(preparedPath));
@@ -1000,6 +1109,8 @@ function rankedRowItems(rows) {
 function applyGlobalRowColorHints(rows, ocrResults = []) {
     const hints = flattenedRowColorHints(ocrResults);
     if (!hints.length) return rows;
+    const imagesWithHints = ocrResults.filter(result => (result?.rowColorHints || []).length).length;
+    if (imagesWithHints > 1) return rows;
 
     const ranked = rankedRowItems(rows);
     if (!ranked.length || ranked.every(item => rowHasImageSamplerHint(rows[item.index]))) return rows;
@@ -1493,6 +1604,7 @@ module.exports = {
     normalizeOcrText,
     ocrImage,
     ocrImages,
+    prepareImageForGemini,
     parseRaceScreenshots,
     runCommand,
     summarizePlayers: summarize

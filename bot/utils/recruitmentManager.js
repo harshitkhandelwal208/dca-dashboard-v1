@@ -11,7 +11,10 @@ const crypto = require("crypto");
 const { loadDashboardConfig, saveDashboardConfig } = require("./dashboardConfig");
 const { logAction } = require("./logStore");
 const { incrementTeamCount } = require("./memberCountManager");
-const { analyzeRecruitmentLicense } = require("./recruitmentOcr");
+const {
+    analyzeRecruitmentLicense,
+    classifyRecruitmentTicketScreenshots
+} = require("./recruitmentOcr");
 const { queueTeamRoleAssignment } = require("./teamRoleScheduler");
 const {
     appendRecruitmentLog,
@@ -690,6 +693,8 @@ async function completeWithoutEvents(interaction) {
     });
 
     try {
+        const config = await loadDashboardConfig();
+        await validateApplicationScreenshots(session, config);
         const { thread } = await createApplicationThread(interaction.client, session);
         deleteSession(session.token);
         await interaction.followUp({
@@ -737,6 +742,7 @@ async function collectEventScreenshots(interaction) {
         await upload.message.delete().catch(() => null);
         await cleanRecruitmentPanelChannel(interaction.client, config).catch(() => null);
 
+        await validateApplicationScreenshots(session, config);
         const { thread } = await createApplicationThread(interaction.client, session);
         deleteSession(session.token);
         await interaction.followUp({
@@ -844,6 +850,35 @@ function screenshotListText(ticket, target) {
         })
         .join("\n")
         .slice(0, 1900);
+}
+
+async function validateApplicationScreenshots(session, config) {
+    const classified = await classifyRecruitmentTicketScreenshots(session, config);
+    const nextLicense = cleanScreenshotList(classified.licenseAttachments || []);
+    const nextEvents = cleanScreenshotList(classified.eventAttachments || []);
+    const acceptedUrls = new Set([...nextLicense, ...nextEvents].map(item => item.url).filter(Boolean));
+    const invalid = (classified.invalidAttachments || [])
+        .filter(item => item?.url && !acceptedUrls.has(item.url));
+
+    if (!nextLicense.length) {
+        throw new Error("I could not find a valid HCR2 driver's license/profile screenshot. Upload the profile screen with Garage power visible.");
+    }
+
+    if ((session.eventAttachments || []).length && !nextEvents.length) {
+        throw new Error("I could not find a valid HCR2 team-event result or standings screenshot in the team event upload.");
+    }
+
+    if (invalid.length) {
+        const names = invalid
+            .slice(0, 3)
+            .map(item => item.name || "screenshot")
+            .join(", ");
+        throw new Error(`${names} did not look like a valid HCR2 driver's license or team-event score screenshot.`);
+    }
+
+    session.licenseAttachments = nextLicense;
+    session.eventAttachments = nextEvents;
+    return session;
 }
 
 async function normalizeTicketScreenshots(interaction, type, attachments, ticket = null) {
