@@ -68,4 +68,4 @@ This repo includes `.github/workflows/deploy-azure.yml`. Every push to `main` bu
 - Bot: `dca-bot-31464`
 - Dashboard: `dca-dashboard-31464`
 
-The Azure identity is `dca-github-actions-deployer` in `dca-bot-rg`, with a federated credential for `harshitkhandelwal208/dca-dashboard-v1` on `main` and the `Website Contributor` role scoped to `dca-bot-rg`.
+The Azure identity is `dca-github-actions-deployer` in `dca-bot-rg`, with client ID `2e531cfc-0fbb-4bf5-ac59-2c10e20d566a`, a federated credential for `harshitkhandelwal208/dca-dashboard-v1` on `main`, and the `Website Contributor` role scoped to `dca-bot-rg`.
