@@ -189,8 +189,11 @@ function parsePlacementLine(line) {
 }
 
 function geminiApiKey(settings = {}) {
+    if (Object.prototype.hasOwnProperty.call(settings, "geminiApiKey")) {
+        return String(settings.geminiApiKey || "").trim();
+    }
+
     return String(
-        settings.geminiApiKey ||
         process.env.GEMINI_API_KEY ||
         process.env.GOOGLE_GEMINI_API_KEY ||
         ""

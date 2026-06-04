@@ -5,7 +5,7 @@ DCA Bot Suite contains two deployable applications that share one Discord bot to
 - `bot/` - the Discord bot runtime, slash commands, recruitment tickets, reaction roles, team counts, YouTube checks, Gemini spreadsheet generation, and automatic team-event reports.
 - `dashboard/` - the React and Express dashboard used to configure servers, channels, roles, tickets, member counts, feeds, spreadsheets, and bot logging.
 
-Both apps can use the same Postgres database through `DATABASE_URL`. If no database URL is provided, local JSON files in `bot/data/` are used for development.
+Both apps can use the same database through `DATABASE_URL`. PostgreSQL URLs and Azure SQL connection strings are supported. If no database URL is provided, local JSON files in `bot/data/` are used for development.
 
 ## Repository Layout
 
@@ -34,7 +34,7 @@ Both apps can use the same Postgres database through `DATABASE_URL`. If no datab
 - Node.js 18 or newer.
 - A Discord application with a bot user.
 - A bot token with the needed gateway intents enabled.
-- A shared Postgres database for production, recommended for Render and Vercel.
+- A shared database for production. PostgreSQL and Azure SQL are supported; the Azure deployment uses Azure SQL Database's free offer.
 
 The team-event spreadsheet system uses:
 
@@ -44,11 +44,13 @@ The team-event spreadsheet system uses:
 
 Gemini uses the REST `generateContent` API with inline image data. The implementation follows Google's official Gemini API shape for `inline_data` multimodal requests: https://ai.google.dev/api
 
-Required Gemini environment:
+Required recruitment Gemini environment:
 
 ```env
-GEMINI_API_KEY=your_google_ai_studio_key
+RECRUITMENT_GEMINI_API_KEY=google_ai_studio_key_for_recruitment_license_ocr
 ```
+
+Spreadsheet Gemini keys are configured per team in the dashboard. They intentionally default to blank.
 
 Optional Gemini and XLSX environment:
 
@@ -94,8 +96,9 @@ Required bot environment:
 ```env
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
-DATABASE_URL=postgres_connection_string_shared_with_dashboard
-GEMINI_API_KEY=your_google_ai_studio_key
+DATABASE_URL=database_connection_string_shared_with_dashboard
+DATABASE_CLIENT=postgres_or_sqlserver
+RECRUITMENT_GEMINI_API_KEY=google_ai_studio_key_for_recruitment_license_ocr
 ```
 
 Recommended bot environment:
@@ -137,7 +140,8 @@ Required dashboard environment:
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
 DISCORD_CLIENT_SECRET=your_oauth_secret
-DATABASE_URL=same_postgres_connection_string_as_bot
+DATABASE_URL=same_database_connection_string_as_bot
+DATABASE_CLIENT=postgres_or_sqlserver
 DASHBOARD_BASE_URL=https://your-dashboard.example.com
 DISCORD_REDIRECT_URI=https://your-dashboard.example.com/auth/discord/callback
 DASHBOARD_SESSION_SECRET=a_long_random_secret
@@ -186,7 +190,7 @@ If login fails with a callback or OAuth exchange error, check:
 The bot supports two server IDs:
 
 - Community server - welcome, leave, reaction roles, YouTube posts, member count, dashboard access role, and destination invites.
-- Recruitment server - recruitment panel, ticket threads, recruiter roles, ban list, tutorial uploads, and recruitment logs.
+- Recruitment server - recruitment panel, ticket threads, recruiter roles, ban list, screenshot guide uploads, and recruitment logs.
 
 The dashboard Spreadsheet page can choose monitored channels, output channels, and access roles from both the community and recruitment servers.
 
@@ -208,7 +212,6 @@ Main commands:
 /tickets massadd
 /tickets remove
 /tickets rename
-/tickets tutorial
 /tickets screenshot-list
 /tickets screenshot-add
 /tickets screenshot-change
@@ -273,7 +276,7 @@ Global Spreadsheet settings:
 The Gemini API key is configured by environment variable, not in the dashboard:
 
 ```env
-GEMINI_API_KEY=your_google_ai_studio_key
+RECRUITMENT_GEMINI_API_KEY=google_ai_studio_key_for_recruitment_license_ocr
 ```
 
 Screenshot submission rules:
@@ -397,10 +400,11 @@ The help output covers recruitment, spreadsheets, weekly/monthly reports, member
 
 ## State Storage
 
-With `DATABASE_URL`, state is stored in the configured Postgres table, default:
+With `DATABASE_URL`, state is stored in the configured database table, default:
 
 ```env
 STATE_TABLE_NAME=dca_bot_state
+DATABASE_CLIENT=postgres_or_sqlserver
 ```
 
 Without `DATABASE_URL`, local JSON fallback files are used:
@@ -430,7 +434,7 @@ Recommended production split:
 
 - Bot on Render or another long-running Node host.
 - Dashboard on Vercel or another web host.
-- Shared Postgres database.
+- Shared database. PostgreSQL and Azure SQL are supported.
 
 For the bot host:
 

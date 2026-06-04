@@ -516,7 +516,7 @@ async function loadMe() {
     const detailText = {
         oauth_state: "Discord sign in expired or lost its state cookie. Start from the dashboard login button again and make sure cookies are allowed.",
         missing_setup: "Dashboard OAuth setup is incomplete on the server.",
-        oauth_exchange: "Discord rejected the OAuth exchange. Check DISCORD_CLIENT_SECRET and make sure DISCORD_REDIRECT_URI exactly matches the Discord Developer Portal redirect.",
+        oauth_exchange: "Discord rejected the OAuth exchange. Check DISCORD_CLIENT_ID, reset/copy DISCORD_CLIENT_SECRET from the Discord Developer Portal, and make sure DISCORD_REDIRECT_URI exactly matches the registered redirect.",
         missing_access_token: "Discord did not return an access token.",
         guild_member_lookup: "Discord could not verify you in the configured server. Check DISCORD_GUILD_ID/community guild ID and make sure you are in that server.",
         discord_unauthorized: "Discord rejected one of the dashboard credentials. Check the bot token, client ID, and client secret.",
@@ -526,7 +526,7 @@ async function loadMe() {
     const reasonText = {
         denied: "Your Discord account is missing the required access role.",
         setup: "Dashboard OAuth setup is incomplete on the server.",
-        error: detailText || "Discord sign in failed. Check the dashboard service logs on Render."
+        error: detailText || "Discord sign in failed. Check the dashboard service logs."
     }[authReason];
 
     if (authReason) {

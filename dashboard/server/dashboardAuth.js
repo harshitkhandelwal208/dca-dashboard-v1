@@ -129,7 +129,7 @@ function publicErrorDetail(message) {
 
     if (/state/i.test(text)) return "oauth_state";
     if (/missing dashboard oauth settings/i.test(text)) return "missing_setup";
-    if (/invalid_grant|invalid client|client_secret|unauthorized_client/i.test(text)) return "oauth_exchange";
+    if (/invalid_grant|invalid[_ -]?client|client_secret|client id|unauthorized_client|redirect_uri|redirect uri/i.test(text)) return "oauth_exchange";
     if (/access token/i.test(text)) return "missing_access_token";
     if (/unknown guild|guild|missing access|404/i.test(text)) return "guild_member_lookup";
     if (/401|unauthorized/i.test(text)) return "discord_unauthorized";

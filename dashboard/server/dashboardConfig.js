@@ -5,7 +5,7 @@ const CONFIG_SCOPE = "dashboardConfig";
 const CONFIG_PATH = filePathFor(CONFIG_SCOPE);
 const SNOWFLAKE_RE = /^\d{10,25}$/;
 const HEX_COLOR_RE = /^#?[0-9a-f]{6}$/i;
-const CONFIG_VERSION = 9;
+const CONFIG_VERSION = 10;
 
 const DEFAULT_RECRUITMENT_QUESTIONS = [
     "Which team do you want to join?",
@@ -50,6 +50,7 @@ const DEFAULT_SPREADSHEET_TEAMS = DEFAULT_MEMBER_TEAMS.map(team => ({
     monitoredChannelId: "",
     outputChannelId: "",
     accessRoleId: "",
+    geminiApiKey: "",
     ownTeamAliases: [...new Set([team.name, ...(team.aliases || [])])],
     ownPlayerAliases: [],
     autoProcess: true
@@ -122,6 +123,7 @@ const DEFAULT_CONFIG = {
         communityRulesRoleId: "",
         banListChannelId: "",
         banListMessageIds: [],
+        geminiApiKey: "",
         privateThreads: true,
         threadAutoArchiveMinutes: 10080,
         maxOpenTicketsPerUser: 1,
@@ -136,13 +138,17 @@ const DEFAULT_CONFIG = {
                 label: "License Screenshot",
                 description: "How to upload an uncropped driver's license screenshot with coins and gems visible.",
                 videoUrl: "",
+                guideImageUrl: "/guides/driver-license.jpg",
+                imageKind: "driver-license",
                 enabled: true
             },
             {
-                id: "player-stats",
-                label: "Player Stats",
-                description: "How to show your player stats for recruiters.",
+                id: "team-event-scores",
+                label: "Team Event Scores",
+                description: "How to upload the final standings or team-event score screenshot.",
                 videoUrl: "",
+                guideImageUrl: "/guides/team-event-score.jpg",
+                imageKind: "team-event-score",
                 enabled: true
             }
         ]
@@ -269,6 +275,17 @@ function cleanStringList(value, fallback = [], maxItems = 20, maxLength = 80) {
         .slice(0, maxItems);
 }
 
+function cleanApiKey(value, fallback = "") {
+    if (typeof value !== "string") return fallback;
+    return value.trim().slice(0, 500);
+}
+
+function cleanTutorialImageKind(value, fallback = "general") {
+    const text = cleanName(value, fallback, 40).toLowerCase();
+    if (["driver-license", "team-event-score", "general"].includes(text)) return text;
+    return fallback;
+}
+
 function normalizeBot(input, fallback) {
     const raw = input && typeof input === "object" ? input : {};
 
@@ -353,6 +370,8 @@ function normalizeTutorial(input, fallback, index) {
         label: cleanName(raw.label, base.label || `Tutorial ${index + 1}`, 40),
         description: cleanOptionalText(raw.description, base.description || "", 500),
         videoUrl: cleanOptionalText(raw.videoUrl, base.videoUrl || "", 1000),
+        guideImageUrl: cleanOptionalText(raw.guideImageUrl, base.guideImageUrl || "", 1000),
+        imageKind: cleanTutorialImageKind(raw.imageKind, base.imageKind || "general"),
         enabled: cleanBoolean(raw.enabled, base.enabled !== false)
     };
 }
@@ -388,6 +407,7 @@ function normalizeRecruitment(input, fallback) {
             .slice(0, 20)
             .map(value => cleanSnowflake(value, ""))
             .filter(Boolean),
+        geminiApiKey: cleanApiKey(raw.geminiApiKey, process.env.RECRUITMENT_GEMINI_API_KEY || base.geminiApiKey || ""),
         privateThreads: cleanBoolean(raw.privateThreads, base.privateThreads !== false),
         threadAutoArchiveMinutes: cleanNumber(raw.threadAutoArchiveMinutes, base.threadAutoArchiveMinutes || 10080, 60, 10080),
         maxOpenTicketsPerUser: cleanNumber(raw.maxOpenTicketsPerUser, base.maxOpenTicketsPerUser || 1, 1, 10),
@@ -466,6 +486,7 @@ function normalizeSpreadsheetTeam(input, fallback, index) {
         monitoredChannelId: cleanSnowflake(raw.monitoredChannelId, base.monitoredChannelId || ""),
         outputChannelId: cleanSnowflake(raw.outputChannelId, base.outputChannelId || ""),
         accessRoleId: cleanSnowflake(raw.accessRoleId, base.accessRoleId || ""),
+        geminiApiKey: cleanApiKey(raw.geminiApiKey, base.geminiApiKey || ""),
         ownTeamAliases: cleanStringList(raw.ownTeamAliases, base.ownTeamAliases || [name], 25, 80),
         ownPlayerAliases: cleanStringList(raw.ownPlayerAliases, base.ownPlayerAliases || [], 250, 80),
         autoProcess: cleanBoolean(raw.autoProcess, base.autoProcess !== false)

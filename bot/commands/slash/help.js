@@ -18,7 +18,7 @@ module.exports = {
             .addFields(
                 {
                     name: "Recruitment",
-                    value: "`/tickets setup`, `/tickets status`, `/tickets logs`, `/tickets claim`, `/tickets close`, `/tickets add`, `/tickets remove`, `/tickets tutorial`, `/tickets screenshot-list`, `screenshot-add`, `screenshot-change`, `screenshot-remove`, `/tickets archive`, `/tickets delete`, `/invite`, `/ban`"
+                    value: "`/tickets setup`, `/tickets status`, `/tickets logs`, `/tickets claim`, `/tickets close`, `/tickets add`, `/tickets remove`, `/tickets screenshot-list`, `screenshot-add`, `screenshot-change`, `screenshot-remove`, `/tickets archive`, `/tickets delete`, `/invite`, `/ban`"
                 },
                 {
                     name: "Spreadsheets And Team Events",

@@ -74,7 +74,7 @@ function authMessageFromQuery() {
     const detailMessages = {
         oauth_state: "Discord sign in expired or lost its state cookie. Start from the dashboard login button again and make sure cookies are allowed.",
         missing_setup: "Dashboard OAuth setup is incomplete on the server.",
-        oauth_exchange: "Discord rejected the OAuth exchange. Check DISCORD_CLIENT_SECRET and make sure DISCORD_REDIRECT_URI exactly matches the Discord Developer Portal redirect.",
+        oauth_exchange: "Discord rejected the OAuth exchange. Check DISCORD_CLIENT_ID, reset/copy DISCORD_CLIENT_SECRET from the Discord Developer Portal, and make sure DISCORD_REDIRECT_URI exactly matches the registered redirect.",
         missing_access_token: "Discord did not return an access token.",
         guild_member_lookup: "Discord could not verify you in the configured server. Check DISCORD_GUILD_ID/community guild ID and make sure you are in that server.",
         discord_unauthorized: "Discord rejected one of the dashboard credentials. Check the bot token, client ID, and client secret.",
@@ -85,7 +85,7 @@ function authMessageFromQuery() {
     const authMessages = {
         denied: "Your Discord account is missing the required dashboard access role.",
         setup: "Dashboard OAuth setup is incomplete on the server.",
-        error: detailMessages[detail] || "Discord sign in failed. Check the dashboard service logs on Render."
+        error: detailMessages[detail] || "Discord sign in failed. Check the dashboard service logs."
     };
 
     window.history.replaceState({}, document.title, window.location.pathname || "/dashboard");
@@ -725,6 +725,7 @@ export default function App() {
                         <SelectField label="Tutorial upload channel" value={config.recruitment.tutorialUploadChannelId} onChange={value => patch("recruitment.tutorialUploadChannelId", value)} options={serverChannels} />
                         <SelectField label="Recruiter role" value={config.recruitment.recruiterRoleId} onChange={value => patch("recruitment.recruiterRoleId", value)} options={serverRoles} />
                         <Field label="Screenshot DM user ID"><TextInput value={config.recruitment.screenshotDmUserId || ""} onChange={event => patch("recruitment.screenshotDmUserId", event.target.value)} /></Field>
+                        <Field label="Recruitment Gemini API key"><TextInput type="password" value={config.recruitment.geminiApiKey || ""} onChange={event => patch("recruitment.geminiApiKey", event.target.value)} /></Field>
                         <Field label="Max open tickets"><TextInput type="number" min="1" max="10" value={config.recruitment.maxOpenTicketsPerUser} onChange={event => patch("recruitment.maxOpenTicketsPerUser", Number(event.target.value))} /></Field>
                         <Field label="Panel title"><TextInput value={config.recruitment.panelTitle} onChange={event => patch("recruitment.panelTitle", event.target.value)} /></Field>
                         <Field label="Panel color"><TextInput type="color" value={config.recruitment.panelColor} onChange={event => patch("recruitment.panelColor", event.target.value)} /></Field>
@@ -768,6 +769,8 @@ export default function App() {
                         label: "New Tutorial",
                         description: "",
                         videoUrl: "",
+                        guideImageUrl: "",
+                        imageKind: "general",
                         enabled: true
                     })}>Add Tutorial</IconButton>
                 }>
@@ -780,8 +783,22 @@ export default function App() {
                                 </div>
                                 <Field label="ID"><TextInput value={tutorial.id} onChange={event => patchItem("recruitment.tutorials", index, { id: event.target.value })} /></Field>
                                 <Field label="Label"><TextInput value={tutorial.label} onChange={event => patchItem("recruitment.tutorials", index, { label: event.target.value })} /></Field>
+                                <Field label="Image type">
+                                    <select className="input" value={tutorial.imageKind || "general"} onChange={event => patchItem("recruitment.tutorials", index, { imageKind: event.target.value })}>
+                                        <option value="general">General</option>
+                                        <option value="driver-license">Driver license</option>
+                                        <option value="team-event-score">Team event score</option>
+                                    </select>
+                                </Field>
                                 <Field label="Description"><TextArea rows={3} value={tutorial.description} onChange={event => patchItem("recruitment.tutorials", index, { description: event.target.value })} /></Field>
                                 <Field label="Video URL"><TextInput value={tutorial.videoUrl} onChange={event => patchItem("recruitment.tutorials", index, { videoUrl: event.target.value })} /></Field>
+                                <Field label="Guide image URL"><TextInput value={tutorial.guideImageUrl || ""} onChange={event => patchItem("recruitment.tutorials", index, { guideImageUrl: event.target.value })} /></Field>
+                                {tutorial.guideImageUrl ? (
+                                    <a className="guide-preview" href={tutorial.guideImageUrl} target="_blank" rel="noreferrer">
+                                        <img src={tutorial.guideImageUrl} alt="" />
+                                        <span>Open guide image <ExternalLink size={13} /></span>
+                                    </a>
+                                ) : null}
                                 <label className="upload-zone">
                                     {busyAction === `upload-${tutorial.id}` ? <Loader2 className="spin" size={18} /> : <Upload size={18} />}
                                     <span>Upload video</span>
@@ -923,6 +940,7 @@ export default function App() {
                         monitoredChannelId: "",
                         outputChannelId: "",
                         accessRoleId: "",
+                        geminiApiKey: "",
                         ownTeamAliases: [],
                         ownPlayerAliases: [],
                         autoProcess: true
@@ -940,6 +958,7 @@ export default function App() {
                                 <SelectField label="Monitored channel" value={team.monitoredChannelId || ""} onChange={value => patchItem("spreadsheets.teams", index, { monitoredChannelId: value })} options={spreadsheetChannels} />
                                 <SelectField label="Output channel" value={team.outputChannelId || ""} onChange={value => patchItem("spreadsheets.teams", index, { outputChannelId: value })} options={spreadsheetChannels} placeholder="Submission channel" />
                                 <SelectField label="Team access role" value={team.accessRoleId || ""} onChange={value => patchItem("spreadsheets.teams", index, { accessRoleId: value })} options={spreadsheetRoles} placeholder="Admins only" />
+                                <Field label="Team Gemini API key"><TextInput type="password" value={team.geminiApiKey || ""} onChange={event => patchItem("spreadsheets.teams", index, { geminiApiKey: event.target.value })} /></Field>
                                 <Field label="Own team aliases"><TextInput value={(team.ownTeamAliases || []).join(", ")} onChange={event => patchItem("spreadsheets.teams", index, { ownTeamAliases: event.target.value.split(",").map(item => item.trim()).filter(Boolean) })} /></Field>
                                 <Field label="Known own players"><TextInput value={(team.ownPlayerAliases || []).join(", ")} onChange={event => patchItem("spreadsheets.teams", index, { ownPlayerAliases: event.target.value.split(",").map(item => item.trim()).filter(Boolean) })} /></Field>
                                 <Toggle label="Auto process" checked={team.autoProcess !== false} onChange={value => patchItem("spreadsheets.teams", index, { autoProcess: value })} />

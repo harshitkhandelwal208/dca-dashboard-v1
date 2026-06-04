@@ -20,7 +20,6 @@ const {
     removeTicketScreenshot,
     removeUserFromTicket,
     renameTicket,
-    sendTutorial,
     startClose
 } = require("../../utils/recruitmentManager");
 const { listRecruitmentLogs, listTickets } = require("../../utils/recruitmentStore");
@@ -199,18 +198,6 @@ module.exports = {
                         .setName("name")
                         .setDescription("New thread name")
                         .setMaxLength(90)
-                        .setRequired(true)
-                )
-        )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName("tutorial")
-                .setDescription("Send one configured dashboard tutorial into this ticket")
-                .addStringOption(option =>
-                    option
-                        .setName("tutorial_id")
-                        .setDescription("Tutorial ID from the dashboard, e.g. license-screenshot")
-                        .setMaxLength(80)
                         .setRequired(true)
                 )
         )
@@ -415,11 +402,6 @@ module.exports = {
 
         if (subcommand === "rename") {
             await renameTicket(interaction, interaction.options.getString("name", true));
-            return;
-        }
-
-        if (subcommand === "tutorial") {
-            await sendTutorial(interaction, interaction.options.getString("tutorial_id", true));
             return;
         }
 

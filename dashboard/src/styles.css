@@ -585,6 +585,29 @@ main {
     display: none;
 }
 
+.guide-preview {
+    display: grid;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.guide-preview img {
+    width: 100%;
+    max-height: 150px;
+    object-fit: cover;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.guide-preview span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
 .chips-edit,
 .option-list {
     display: grid;

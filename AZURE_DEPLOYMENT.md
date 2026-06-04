@@ -5,7 +5,8 @@ This repo deploys as two Azure App Services in one Linux App Service plan:
 - `bot/` runs the Discord bot runtime.
 - `dashboard/` runs the Express dashboard and serves the built React app.
 
-Both apps must share the same `DATABASE_URL`.
+Both apps must share the same `DATABASE_URL`. The app supports PostgreSQL URLs and Azure SQL
+connection strings; this deployment uses Azure SQL Database's free offer with `DATABASE_CLIENT=sqlserver`.
 
 ## Least-Work Path
 
@@ -19,7 +20,7 @@ The script will:
 
 1. Install/check Azure CLI.
 2. Open Azure login if needed.
-3. Create a resource group, Linux App Service plan, two web apps, and an optional Azure Postgres Flexible Server.
+3. Create a resource group, Linux App Service plan, two web apps, and an optional database.
 4. Prompt for Discord/Gemini secrets.
 5. Build the dashboard.
 6. Zip-deploy both apps.
@@ -34,6 +35,8 @@ Use an existing database:
 .\scripts\deploy-azure.ps1 -SkipPostgres -DatabaseUrl "postgres://..."
 ```
 
+For Azure SQL, use an ADO.NET-style connection string and set `DATABASE_CLIENT=sqlserver` in both App Services.
+
 Pick stable names:
 
 ```powershell
@@ -41,8 +44,7 @@ Pick stable names:
   -ResourceGroup "dca-prod-rg" `
   -PlanName "dca-prod-plan" `
   -BotAppName "dca-prod-bot" `
-  -DashboardAppName "dca-prod-dashboard" `
-  -PostgresServerName "dca-prod-pg"
+  -DashboardAppName "dca-prod-dashboard"
 ```
 
 Pick a subscription:
@@ -54,6 +56,7 @@ Pick a subscription:
 ## Notes
 
 - The default plan is Basic B1 because the Discord bot needs Always On. Free App Service plans can sleep and disconnect the bot.
+- Azure SQL Database's free offer must be created with free limits enabled and exhaustion behavior set to auto-pause to avoid overage.
 - Azure App Service builds production dependencies during zip deployment.
 - The dashboard URL will be `https://<dashboard-app-name>.azurewebsites.net/dashboard`.
 - The Discord OAuth redirect URI must exactly match `https://<dashboard-app-name>.azurewebsites.net/auth/discord/callback`.

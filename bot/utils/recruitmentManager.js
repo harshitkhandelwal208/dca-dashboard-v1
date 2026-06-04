@@ -32,6 +32,7 @@ const CLOSE_ID = "recruitment:close";
 const CLOSE_TEAM_PREFIX = "recruitment:close-team:";
 const TUTORIAL_PREFIX = "recruitment:tutorial:";
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_SCREENSHOT_ATTEMPTS = 3;
 const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif)$/i;
 const activeSessions = new Map();
 
@@ -162,6 +163,69 @@ function screenshotDmUserId(config) {
     return config?.recruitment?.screenshotDmUserId ||
         process.env.RECRUITMENT_SCREENSHOT_DM_USER_ID ||
         "";
+}
+
+function dashboardBaseUrl(config) {
+    return String(
+        config?.bot?.dashboardUrl ||
+        process.env.DASHBOARD_BASE_URL ||
+        process.env.DASHBOARD_PUBLIC_URL ||
+        ""
+    ).replace(/\/+$/, "");
+}
+
+function absoluteGuideUrl(config, value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^https?:\/\//i.test(text)) return text;
+    const base = dashboardBaseUrl(config);
+    if (!base) return text;
+    return `${base}${text.startsWith("/") ? "" : "/"}${text}`;
+}
+
+function screenshotGuideKind(type) {
+    return type === "event" ? "team-event-score" : "driver-license";
+}
+
+function screenshotGuideLabel(type) {
+    return type === "event" ? "team event score screenshot" : "driver's license screenshot";
+}
+
+function tutorialForScreenshotType(config, type) {
+    const kind = screenshotGuideKind(type);
+    const tutorials = config?.recruitment?.tutorials || [];
+    return tutorials.find(tutorial => tutorial.imageKind === kind && tutorial.guideImageUrl) ||
+        tutorials.find(tutorial => tutorial.guideImageUrl) ||
+        null;
+}
+
+async function sendScreenshotGuide(interaction, config, type, reason) {
+    const tutorial = tutorialForScreenshotType(config, type);
+    const label = screenshotGuideLabel(type);
+    const guideUrl = absoluteGuideUrl(config, tutorial?.guideImageUrl || "");
+    const description = [
+        reason,
+        `Please upload a correct ${label} in this channel.`,
+        tutorial?.description || ""
+    ].filter(Boolean).join("\n\n").slice(0, 4000);
+
+    const embed = new EmbedBuilder()
+        .setTitle(`Correct ${label}`)
+        .setDescription(description)
+        .setColor(colorToNumber(config?.recruitment?.panelColor));
+
+    if (guideUrl) embed.setImage(guideUrl);
+
+    const content = tutorial?.videoUrl
+        ? `Guide video: ${tutorial.videoUrl}`
+        : guideUrl
+            ? "Use the guide image below as the expected screenshot format."
+            : "Please upload the correct screenshot format and try again.";
+
+    await respondEphemeral(interaction, {
+        content,
+        embeds: [embed]
+    }).catch(() => null);
 }
 
 function teamOutcomeId(index) {
@@ -349,7 +413,7 @@ function buildCloseOutcomeRows(config) {
 }
 
 function buildTicketControls(config) {
-    const rows = [
+    return [
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(CLAIM_ID)
@@ -361,22 +425,6 @@ function buildTicketControls(config) {
                 .setStyle(ButtonStyle.Danger)
         )
     ];
-
-    const tutorialButtons = config.recruitment.tutorials
-        .filter(tutorial => tutorial.enabled)
-        .slice(0, 5)
-        .map(tutorial =>
-            new ButtonBuilder()
-                .setCustomId(`${TUTORIAL_PREFIX}${tutorial.id}`)
-                .setLabel(`Send ${tutorial.label}`.slice(0, 80))
-                .setStyle(ButtonStyle.Primary)
-        );
-
-    if (tutorialButtons.length) {
-        rows.push(new ActionRowBuilder().addComponents(...tutorialButtons));
-    }
-
-    return rows;
 }
 
 function buildApplicationEmbeds(config, session) {
@@ -508,6 +556,38 @@ async function waitForImageMessage(channel, userId, onInvalid = null) {
     });
 }
 
+async function collectValidatedScreenshotUpload(interaction, session, config, type, onMissingImage) {
+    const target = screenshotTarget(type);
+    if (!target) throw new Error("Unknown screenshot type.");
+
+    for (let attempt = 1; attempt <= MAX_SCREENSHOT_ATTEMPTS; attempt += 1) {
+        const upload = await waitForImageMessage(interaction.channel, interaction.user.id, onMissingImage);
+        const mirrored = await mirrorAttachmentsToDm(interaction.client, config, upload.attachments, {
+            kind: target.label,
+            userId: interaction.user.id,
+            userTag: displayTag(interaction.user),
+            guildId: interaction.guildId
+        });
+        await upload.message.delete().catch(() => null);
+        await cleanRecruitmentPanelChannel(interaction.client, config).catch(() => null);
+
+        session[target.field] = mirrored;
+        const result = await classifyApplicationScreenshots(session, config, {
+            type,
+            requireEvent: type === "event"
+        });
+        if (result.ok) return result.session[target.field];
+
+        session[target.field] = [];
+        const suffix = attempt < MAX_SCREENSHOT_ATTEMPTS
+            ? `Attempt ${attempt}/${MAX_SCREENSHOT_ATTEMPTS}.`
+            : `Attempt ${attempt}/${MAX_SCREENSHOT_ATTEMPTS}.`;
+        await sendScreenshotGuide(interaction, config, result.type || type, `${result.message}\n\n${suffix}`);
+    }
+
+    throw new Error(`Too many invalid ${target.plural}. Press **Apply!** again when you have the correct image ready.`);
+}
+
 async function userHasOpenTicket(config, userId) {
     const openTickets = await listTickets({ applicantId: userId, status: "open" });
     const maxOpen = Number(config.recruitment.maxOpenTicketsPerUser || 1);
@@ -570,20 +650,12 @@ async function collectLicense(interaction) {
     });
 
     try {
-        const upload = await waitForImageMessage(interaction.channel, interaction.user.id, () =>
+        await collectValidatedScreenshotUpload(interaction, session, config, "license", () =>
             interaction.followUp({
                 content: "That message did not include an image attachment, so I removed it. Please upload the driver's license screenshot as an image file.",
                 ephemeral: true
             })
         );
-        session.licenseAttachments = await mirrorAttachmentsToDm(interaction.client, config, upload.attachments, {
-            kind: "driver license",
-            userId: interaction.user.id,
-            userTag: displayTag(interaction.user),
-            guildId: interaction.guildId
-        });
-        await upload.message.delete().catch(() => null);
-        await cleanRecruitmentPanelChannel(interaction.client, config).catch(() => null);
 
         await interaction.editReply({
             content: "Driver's license captured. Do you have team event score screenshots to add?",
@@ -727,22 +799,13 @@ async function collectEventScreenshots(interaction) {
 
     try {
         const config = await loadDashboardConfig();
-        const upload = await waitForImageMessage(interaction.channel, interaction.user.id, () =>
+        await collectValidatedScreenshotUpload(interaction, session, config, "event", () =>
             interaction.followUp({
                 content: "That message did not include an image attachment, so I removed it. Please upload the team event scores as image files.",
                 ephemeral: true
             })
         );
-        session.eventAttachments = await mirrorAttachmentsToDm(interaction.client, config, upload.attachments, {
-            kind: "team event scores",
-            userId: interaction.user.id,
-            userTag: displayTag(interaction.user),
-            guildId: interaction.guildId
-        });
-        await upload.message.delete().catch(() => null);
-        await cleanRecruitmentPanelChannel(interaction.client, config).catch(() => null);
 
-        await validateApplicationScreenshots(session, config);
         const { thread } = await createApplicationThread(interaction.client, session);
         deleteSession(session.token);
         await interaction.followUp({
@@ -852,7 +915,7 @@ function screenshotListText(ticket, target) {
         .slice(0, 1900);
 }
 
-async function validateApplicationScreenshots(session, config) {
+async function classifyApplicationScreenshots(session, config, options = {}) {
     const classified = await classifyRecruitmentTicketScreenshots(session, config);
     const nextLicense = cleanScreenshotList(classified.licenseAttachments || []);
     const nextEvents = cleanScreenshotList(classified.eventAttachments || []);
@@ -861,11 +924,19 @@ async function validateApplicationScreenshots(session, config) {
         .filter(item => item?.url && !acceptedUrls.has(item.url));
 
     if (!nextLicense.length) {
-        throw new Error("I could not find a valid HCR2 driver's license/profile screenshot. Upload the profile screen with Garage power visible.");
+        return {
+            ok: false,
+            type: "license",
+            message: "I could not find a valid HCR2 driver's license/profile screenshot. Upload the profile screen with Garage power visible."
+        };
     }
 
-    if ((session.eventAttachments || []).length && !nextEvents.length) {
-        throw new Error("I could not find a valid HCR2 team-event result or standings screenshot in the team event upload.");
+    if ((options.requireEvent || (session.eventAttachments || []).length) && !nextEvents.length) {
+        return {
+            ok: false,
+            type: "event",
+            message: "I could not find a valid HCR2 team-event result, score summary, or final standings screenshot in the team event upload."
+        };
     }
 
     if (invalid.length) {
@@ -873,12 +944,22 @@ async function validateApplicationScreenshots(session, config) {
             .slice(0, 3)
             .map(item => item.name || "screenshot")
             .join(", ");
-        throw new Error(`${names} did not look like a valid HCR2 driver's license or team-event score screenshot.`);
+        return {
+            ok: false,
+            type: options.type || "license",
+            message: `${names} did not look like a valid HCR2 driver's license or team-event score screenshot.`
+        };
     }
 
     session.licenseAttachments = nextLicense;
     session.eventAttachments = nextEvents;
-    return session;
+    return { ok: true, session };
+}
+
+async function validateApplicationScreenshots(session, config, options = {}) {
+    const result = await classifyApplicationScreenshots(session, config, options);
+    if (!result.ok) throw new Error(result.message);
+    return result.session;
 }
 
 async function normalizeTicketScreenshots(interaction, type, attachments, ticket = null) {
@@ -1099,47 +1180,6 @@ async function claimTicket(interaction) {
     });
 
     await respondEphemeral(interaction, `Ticket claimed for ${updated.applicantTag}.`);
-}
-
-async function sendTutorial(interaction, tutorialId) {
-    if (!(await requireRecruiter(interaction))) return;
-
-    const config = await loadDashboardConfig();
-    const tutorial = config.recruitment.tutorials.find(item => item.id === tutorialId && item.enabled);
-
-    if (!tutorial) {
-        await respondEphemeral(interaction, "That tutorial is not configured anymore.");
-        return;
-    }
-
-    if (!tutorial.videoUrl) {
-        await respondEphemeral(interaction, `No video has been uploaded for **${tutorial.label}** yet.`);
-        return;
-    }
-
-    const context = await getTicketContext(interaction);
-    if (!context) return;
-
-    const { thread, ticket } = context;
-    const applicantMention = ticket?.applicantId ? `<@${ticket.applicantId}> ` : "";
-
-    await thread.send({
-        content: `${applicantMention}${tutorial.description || tutorial.label}\n${tutorial.videoUrl}`
-    });
-
-    await logAction(interaction.client, {
-        type: "ticket",
-        title: "Recruitment Tutorial Sent",
-        message: `<@${interaction.user.id}> sent **${tutorial.label}** in a ticket.`,
-        guildId: interaction.guildId,
-        actorId: interaction.user.id,
-        actorTag: displayTag(interaction.user),
-        targetId: ticket?.applicantId || "",
-        targetTag: ticket?.applicantTag || "",
-        metadata: { threadId: thread.id, tutorialId }
-    });
-
-    await respondEphemeral(interaction, `Sent **${tutorial.label}** to the ticket.`);
 }
 
 function renderInviteMessage(template, ticket, inviteUrl, serverName) {
@@ -1768,7 +1808,7 @@ async function handleRecruitmentInteraction(interaction) {
         } else if (customId === CLOSE_ID) {
             await startClose(interaction);
         } else if (customId.startsWith(TUTORIAL_PREFIX)) {
-            await sendTutorial(interaction, customId.slice(TUTORIAL_PREFIX.length));
+            await respondEphemeral(interaction, "Manual tutorial buttons have been removed. Screenshot guidance is sent automatically when an uploaded image fails validation.");
         } else if (customId.startsWith(CLOSE_TEAM_PREFIX)) {
             await finishClose(interaction, customId.slice(CLOSE_TEAM_PREFIX.length));
         }
@@ -1806,6 +1846,5 @@ module.exports = {
     removeUserFromTicket,
     renameTicket,
     sendInviteToApplicant,
-    sendTutorial,
     startClose
 };

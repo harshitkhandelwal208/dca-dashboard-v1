@@ -37,6 +37,19 @@ function knownTeamNames(config = {}) {
     ].filter(Boolean);
 }
 
+function recruitmentGeminiSettings(config = {}) {
+    return {
+        ...(config?.spreadsheets || {}),
+        geminiApiKey: String(
+            config?.recruitment?.geminiApiKey ||
+            process.env.RECRUITMENT_GEMINI_API_KEY ||
+            process.env.GEMINI_API_KEY ||
+            process.env.GOOGLE_GEMINI_API_KEY ||
+            ""
+        ).trim()
+    };
+}
+
 function extensionForAttachment(attachment) {
     const fromName = path.extname(attachment?.name || "").toLowerCase();
     if (/^\.(png|jpe?g|webp|gif)$/i.test(fromName)) return fromName;
@@ -278,7 +291,7 @@ async function classifyRecruitmentTicketScreenshots(ticket, config) {
         }
 
         const extraction = await extractRecruitmentApplication(imageInputs, {
-            ...config?.spreadsheets,
+            ...recruitmentGeminiSettings(config),
             acceptedTeam: ticket.team || "",
             applicantDiscordId: ticket.applicantId || "",
             knownTeams: knownTeamNames(config)
@@ -399,7 +412,7 @@ async function analyzeRecruitmentLicense(ticket, config) {
         }
 
         const extraction = await extractRecruitmentApplication(imageInputs, {
-            ...config?.spreadsheets,
+            ...recruitmentGeminiSettings(config),
             acceptedTeam: ticket.team || "",
             applicantDiscordId: ticket.applicantId || "",
             knownTeams: knownTeamNames(config)

@@ -2,6 +2,15 @@ const { Client, GatewayIntentBits, Collection, Partials } = require("discord.js"
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
+
+const bundledFontConfig = path.join(__dirname, "fonts", "fonts.conf");
+if (!process.env.FONTCONFIG_FILE && fs.existsSync(bundledFontConfig)) {
+    process.env.FONTCONFIG_FILE = bundledFontConfig;
+}
+if (!process.env.FONTCONFIG_PATH && fs.existsSync(path.dirname(bundledFontConfig))) {
+    process.env.FONTCONFIG_PATH = path.dirname(bundledFontConfig);
+}
+
 const {
     ensureReactionRoleMessages,
     handleReactionRole: handleDashboardReactionRole

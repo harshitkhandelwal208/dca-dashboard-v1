@@ -270,6 +270,14 @@ async function teamConfigWithKnownRoster(teamConfig, currentSessionId = "") {
     };
 }
 
+function spreadsheetGeminiSettings(config, teamConfig) {
+    return {
+        ...config.spreadsheets,
+        geminiApiKey: teamConfig.geminiApiKey || "",
+        teamConfig
+    };
+}
+
 async function attachAttendanceSnapshot(session) {
     const sessions = await listSpreadsheetSessions({ teamId: session.teamId });
     const roster = new Map();
@@ -348,10 +356,7 @@ async function processSpreadsheetSession(client, sessionId, options = {}) {
         if (!ocrResults.length || options.rerunOcr) {
             const outputDir = outputBaseDir(session.teamId, session.id);
             imagePaths = await downloadImages(session, outputDir);
-            ocrResults = await ocrImages(imagePaths, {
-                ...config.spreadsheets,
-                teamConfig: extractionTeamConfig
-            });
+            ocrResults = await ocrImages(imagePaths, spreadsheetGeminiSettings(config, extractionTeamConfig));
             parsed = parseRaceScreenshots(ocrResults, extractionTeamConfig);
         } else {
             parsed = parseRaceScreenshots(ocrResults, extractionTeamConfig);
@@ -806,10 +811,7 @@ async function previewSpreadsheetSession(sessionId, options = {}) {
             const outputDir = outputBaseDir(session.teamId, session.id);
             imagePaths = await downloadImages(session, outputDir);
             downloadedImages = true;
-            ocrResults = await ocrImages(imagePaths, {
-                ...config.spreadsheets,
-                teamConfig: extractionTeamConfig
-            });
+            ocrResults = await ocrImages(imagePaths, spreadsheetGeminiSettings(config, extractionTeamConfig));
         }
 
         const parsed = applyCorrections(parseRaceScreenshots(ocrResults, extractionTeamConfig), session.corrections || []);
