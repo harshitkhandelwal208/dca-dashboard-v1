@@ -436,7 +436,7 @@ Ensure-WebApp -Name $DashboardAppName -ResourceGroupName $ResourceGroup -Plan $P
 Write-Host "Configuring App Service settings..."
 Invoke-Az webapp config set --resource-group $ResourceGroup --name $BotAppName --always-on true
 Invoke-Az webapp config set --resource-group $ResourceGroup --name $DashboardAppName --always-on true
-Invoke-Az webapp config set --resource-group $ResourceGroup --name $BotAppName --startup-file "npm start"
+Invoke-Az webapp config set --resource-group $ResourceGroup --name $BotAppName --startup-file "npm run start:runtime"
 Invoke-Az webapp config set --resource-group $ResourceGroup --name $DashboardAppName --startup-file "npm start"
 
 Set-AppSettings -ResourceGroupName $ResourceGroup -AppName $BotAppName -Settings @{

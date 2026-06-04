@@ -60,6 +60,11 @@ jobs:
           tenant-id: a1985a83-ae63-49ce-98c5-f07dfcb910b3
           subscription-id: 4aa2d76c-3207-4402-967b-83c9191c69a1
 
+      - name: Configure startup commands
+        run: |
+          az webapp config set --resource-group "$RESOURCE_GROUP" --name "$BOT_APP_NAME" --startup-file "npm run start:runtime"
+          az webapp config set --resource-group "$RESOURCE_GROUP" --name "$DASHBOARD_APP_NAME" --startup-file "npm start"
+
       - name: Deploy bot
         run: az webapp deploy --resource-group "$RESOURCE_GROUP" --name "$BOT_APP_NAME" --src-path bot.zip --type zip --clean true --track-status false
 
@@ -68,5 +73,5 @@ jobs:
 
       - name: Verify live apps
         run: |
-          curl --fail --retry 12 --retry-delay 10 --retry-all-errors "https://$BOT_APP_NAME.azurewebsites.net/health"
-          curl --fail --retry 12 --retry-delay 10 --retry-all-errors "https://$DASHBOARD_APP_NAME.azurewebsites.net/dashboard/"
+          curl --fail --connect-timeout 10 --max-time 30 --retry 12 --retry-delay 10 --retry-all-errors "https://$BOT_APP_NAME.azurewebsites.net/health"
+          curl --fail --connect-timeout 10 --max-time 30 --retry 12 --retry-delay 10 --retry-all-errors "https://$DASHBOARD_APP_NAME.azurewebsites.net/dashboard/"

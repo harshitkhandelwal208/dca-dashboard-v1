@@ -58,6 +58,7 @@ Pick a subscription:
 - The default plan is Basic B1 because the Discord bot needs Always On. Free App Service plans can sleep and disconnect the bot.
 - Azure SQL Database's free offer must be created with free limits enabled and exhaustion behavior set to auto-pause to avoid overage.
 - Azure App Service builds production dependencies during zip deployment.
+- The bot App Service startup command is `npm run start:runtime`; run `npm --prefix bot run deploy:commands` separately when slash commands need to be refreshed.
 - The dashboard URL will be `https://<dashboard-app-name>.azurewebsites.net/dashboard`.
 - The Discord OAuth redirect URI must exactly match `https://<dashboard-app-name>.azurewebsites.net/auth/discord/callback`.
 

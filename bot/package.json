@@ -7,7 +7,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "npm run deploy:commands && node index.js",
+    "start": "node index.js",
     "start:runtime": "node index.js",
     "deploy:commands": "node deploy-commands.js",
     "test:spreadsheets": "node scripts/test-spreadsheets.js"
