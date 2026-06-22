@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "Repository wrapper for the separate DCA bot and dashboard apps",
   "scripts": {
+    "postinstall": "npm install --prefix bot && npm install --prefix dashboard",
+    "build": "npm run build --prefix dashboard",
+    "start": "PORT=10000 npm run start:bot & npm run start:dashboard",
     "start:bot": "npm --prefix bot start",
     "start:dashboard": "npm --prefix dashboard start",
     "deploy:commands": "npm --prefix bot run deploy:commands",
