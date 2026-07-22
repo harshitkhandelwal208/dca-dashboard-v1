@@ -1,11 +1,5 @@
 const { PermissionsBitField } = require("discord.js");
-const { Pool } = require("pg");
-require("dotenv").config();
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
+const { clearWarnings } = require("../../utils/warningStore");
 
 module.exports = {
   name: "clearwarns",
@@ -21,12 +15,9 @@ module.exports = {
     }
 
     try {
-      const result = await pool.query(
-        "DELETE FROM warnings WHERE user_id = $1 AND guild_id = $2 RETURNING *",
-        [user.id, message.guild.id]
-      );
+      const removed = await clearWarnings(user.id, message.guild.id);
 
-      if (result.rowCount === 0) {
+      if (removed === 0) {
         return message.reply(`**${user.tag}** has no warnings to clear.`);
       }
 

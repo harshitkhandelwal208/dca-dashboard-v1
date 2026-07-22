@@ -3,7 +3,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 
 const DEFAULT_TIMEOUT_MS = 300000;
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
 const DEFAULT_MAX_RETRIES = 4;
 const ROW_COLOR_SCAN_REGION = { xStart: 0.58, xEnd: 0.7 };
 const ROW_COLOR_MIN_CONFIDENCE = 0.35;

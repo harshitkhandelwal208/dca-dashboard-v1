@@ -901,7 +901,7 @@ export default function App() {
             sessionWindowMinutes: 1,
             outputFormat: "xlsx",
             libreOfficePath: "",
-            geminiModel: "gemini-2.5-flash",
+            geminiModel: "gemini-3.6-flash",
             geminiTimeoutMs: 300000,
             geminiMaxRetries: 4,
             rawDataRetentionDays: 31,
@@ -924,7 +924,7 @@ export default function App() {
                             </select>
                         </Field>
                         <Field label="LibreOffice path"><TextInput placeholder="Leave blank; Node writes XLSX" value={spreadsheets.libreOfficePath || ""} onChange={event => patch("spreadsheets.libreOfficePath", event.target.value)} /></Field>
-                        <Field label="Gemini Flash model"><TextInput value={spreadsheets.geminiModel || "gemini-2.5-flash"} onChange={event => patch("spreadsheets.geminiModel", event.target.value)} /></Field>
+                        <Field label="Gemini Flash model"><TextInput value={spreadsheets.geminiModel || "gemini-3.6-flash"} onChange={event => patch("spreadsheets.geminiModel", event.target.value)} /></Field>
                         <Field label="Gemini timeout ms"><TextInput type="number" min="30000" max="900000" value={spreadsheets.geminiTimeoutMs || 300000} onChange={event => patch("spreadsheets.geminiTimeoutMs", Number(event.target.value))} /></Field>
                         <Field label="Gemini retries"><TextInput type="number" min="0" max="10" value={spreadsheets.geminiMaxRetries ?? 4} onChange={event => patch("spreadsheets.geminiMaxRetries", Number(event.target.value))} /></Field>
                         <Field label="Raw data retention days"><TimeInput min="1" max="370" value={spreadsheets.rawDataRetentionDays || 31} onChange={event => patch("spreadsheets.rawDataRetentionDays", Number(event.target.value))} /></Field>

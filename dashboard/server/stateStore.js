@@ -1,7 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const STATE_TABLE = process.env.STATE_TABLE_NAME || "dca_bot_state";
+const STATE_COLLECTION = process.env.FIREBASE_STATE_COLLECTION || "dca_bot_state";
+const STATE_ROOT = process.env.FIREBASE_STATE_ROOT || STATE_COLLECTION;
 const JSON_PATHS = {
     dashboardConfig: () => process.env.DASHBOARD_CONFIG_PATH
         ? path.resolve(process.env.DASHBOARD_CONFIG_PATH)
@@ -17,178 +18,81 @@ const JSON_PATHS = {
         : path.join(__dirname, "..", "data", "recruitmentBans.json"),
     botLogs: () => process.env.BOT_LOGS_PATH
         ? path.resolve(process.env.BOT_LOGS_PATH)
-        : path.join(__dirname, "..", "data", "botLogs.json")
+        : path.join(__dirname, "..", "data", "botLogs.json"),
+    warnings: () => process.env.WARNINGS_PATH
+        ? path.resolve(process.env.WARNINGS_PATH)
+        : path.join(__dirname, "..", "data", "warnings.json")
 };
 
-let pool;
-let poolKey = "";
-let tableReady = false;
+let firebaseStore;
 
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
-function getDatabaseUrl() {
-    return process.env.DATABASE_URL || "";
+function firebaseConfigured() {
+    return Boolean(
+        process.env.FIREBASE_SERVICE_ACCOUNT ||
+        process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+        process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+        process.env.FIREBASE_PROJECT_ID
+    );
 }
 
-function shouldUseSsl(connectionString) {
-    if (process.env.DATABASE_SSL) {
-        return process.env.DATABASE_SSL.toLowerCase() !== "false";
+function parseServiceAccount() {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+        const raw = fs.readFileSync(path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_PATH), "utf8");
+        return JSON.parse(raw);
     }
 
-    return /sslmode=require|neon\.tech|supabase\.co|render\.com/i.test(connectionString);
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT) return null;
+
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+    const json = raw.startsWith("{")
+        ? raw
+        : Buffer.from(raw, "base64").toString("utf8");
+
+    return JSON.parse(json);
 }
 
-function databaseClientType(connectionString) {
-    const forced = String(process.env.DATABASE_CLIENT || process.env.DATABASE_TYPE || "").trim().toLowerCase();
-    if (["mssql", "sqlserver", "sql-server", "azure-sql"].includes(forced)) return "sqlserver";
-    if (["pg", "postgres", "postgresql"].includes(forced)) return "postgres";
-
-    const text = String(connectionString || "").trim();
-    if (/^(mssql|sqlserver):\/\//i.test(text)) return "sqlserver";
-    if (/(^|;)\s*(server|data source)\s*=/i.test(text)) return "sqlserver";
-    return "postgres";
+function firebaseDatabaseType() {
+    const forced = String(process.env.FIREBASE_DATABASE_TYPE || "").trim().toLowerCase();
+    if (["realtime", "rtdb", "database"].includes(forced)) return "realtime";
+    if (["firestore", "cloud-firestore"].includes(forced)) return "firestore";
+    return process.env.FIREBASE_DATABASE_URL ? "realtime" : "firestore";
 }
 
-function parseKeyValueConnectionString(connectionString) {
-    const values = {};
-    for (const part of String(connectionString || "").split(";")) {
-        const index = part.indexOf("=");
-        if (index === -1) continue;
-        const key = part.slice(0, index).trim().toLowerCase().replace(/\s+/g, "");
-        const value = part.slice(index + 1).trim();
-        if (key) values[key] = value;
-    }
-    return values;
-}
+function getFirebaseStore() {
+    if (!firebaseConfigured()) return null;
+    if (firebaseStore) return firebaseStore;
 
-function parseSqlServerHost(value) {
-    let text = String(value || "").trim().replace(/^tcp:/i, "");
-    let port = 1433;
+    const admin = require("firebase-admin");
+    const type = firebaseDatabaseType();
 
-    const commaIndex = text.lastIndexOf(",");
-    const colonIndex = text.lastIndexOf(":");
-    const splitIndex = commaIndex > -1 ? commaIndex : colonIndex;
-    if (splitIndex > -1) {
-        const parsedPort = Number(text.slice(splitIndex + 1));
-        if (Number.isInteger(parsedPort) && parsedPort > 0) {
-            port = parsedPort;
-            text = text.slice(0, splitIndex);
-        }
-    }
+    if (!admin.apps.length) {
+        const serviceAccount = parseServiceAccount();
+        const options = {};
 
-    return { server: text, port };
-}
-
-function sqlServerConfig(connectionString) {
-    const text = String(connectionString || "").trim();
-    if (/^(mssql|sqlserver):\/\//i.test(text)) {
-        const parsed = new URL(text.replace(/^sqlserver:/i, "mssql:"));
-        return {
-            server: parsed.hostname,
-            port: parsed.port ? Number(parsed.port) : 1433,
-            database: decodeURIComponent(parsed.pathname.replace(/^\/+/, "")),
-            user: decodeURIComponent(parsed.username),
-            password: decodeURIComponent(parsed.password),
-            options: {
-                encrypt: parsed.searchParams.get("encrypt") !== "false",
-                trustServerCertificate: parsed.searchParams.get("trustServerCertificate") === "true"
-            },
-            pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
-            connectionTimeout: 30000,
-            requestTimeout: 30000
-        };
-    }
-
-    const values = parseKeyValueConnectionString(text);
-    const host = parseSqlServerHost(values.server || values.datasource || values.addr || values.address || values.networkaddress);
-    const timeoutSeconds = Number(values.connectiontimeout || values.connecttimeout || 30);
-
-    return {
-        server: host.server,
-        port: host.port,
-        database: values.initialcatalog || values.database,
-        user: values.userid || values.uid || values.user,
-        password: values.password || values.pwd,
-        options: {
-            encrypt: String(values.encrypt || "true").toLowerCase() !== "false",
-            trustServerCertificate: String(values.trustservercertificate || "false").toLowerCase() === "true"
-        },
-        pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
-        connectionTimeout: Number.isFinite(timeoutSeconds) ? timeoutSeconds * 1000 : 30000,
-        requestTimeout: 30000
-    };
-}
-
-function getDatabase() {
-    const connectionString = getDatabaseUrl();
-    if (!connectionString) return null;
-
-    const type = databaseClientType(connectionString);
-    const key = `${type}:${connectionString}`;
-    if (!pool || poolKey !== key) {
-        tableReady = false;
-        poolKey = key;
-
-        if (type === "sqlserver") {
-            const sql = require("mssql");
-            pool = new sql.ConnectionPool(sqlServerConfig(connectionString)).connect();
+        if (serviceAccount) {
+            options.credential = admin.credential.cert(serviceAccount);
+            options.projectId = process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id;
         } else {
-            const { Pool } = require("pg");
-            pool = new Pool({
-                connectionString,
-                ssl: shouldUseSsl(connectionString) ? { rejectUnauthorized: false } : undefined
-            });
+            options.credential = admin.credential.applicationDefault();
+            if (process.env.FIREBASE_PROJECT_ID) options.projectId = process.env.FIREBASE_PROJECT_ID;
         }
+
+        if (process.env.FIREBASE_DATABASE_URL) {
+            options.databaseURL = process.env.FIREBASE_DATABASE_URL;
+        }
+
+        admin.initializeApp(options);
     }
 
-    return { type, pool };
-}
+    firebaseStore = type === "realtime"
+        ? { type, db: admin.database() }
+        : { type, db: admin.firestore() };
 
-function quotePostgresIdentifier(identifier) {
-    return `"${String(identifier).replace(/"/g, "\"\"")}"`;
-}
-
-function quoteSqlServerIdentifier(identifier) {
-    return `[${String(identifier).replace(/]/g, "]]")}]`;
-}
-
-function sqlServerTableName() {
-    const schema = process.env.STATE_TABLE_SCHEMA || "dbo";
-    return `${quoteSqlServerIdentifier(schema)}.${quoteSqlServerIdentifier(STATE_TABLE)}`;
-}
-
-async function ensureStateTable() {
-    const db = getDatabase();
-    if (!db || tableReady) return;
-
-    if (db.type === "sqlserver") {
-        const sqlPool = await db.pool;
-        const schema = String(process.env.STATE_TABLE_SCHEMA || "dbo").replace(/'/g, "''");
-        const table = String(STATE_TABLE).replace(/'/g, "''");
-        await sqlPool.request().query(`
-            IF OBJECT_ID(N'${schema}.${table}', N'U') IS NULL
-            BEGIN
-                CREATE TABLE ${sqlServerTableName()} (
-                    scope nvarchar(200) NOT NULL PRIMARY KEY,
-                    data nvarchar(max) NOT NULL,
-                    updated_at datetimeoffset NOT NULL DEFAULT SYSUTCDATETIME(),
-                    CONSTRAINT ${quoteSqlServerIdentifier(`${STATE_TABLE}_data_is_json`)} CHECK (ISJSON(data) = 1)
-                )
-            END
-        `);
-    } else {
-        await db.pool.query(`
-            CREATE TABLE IF NOT EXISTS ${quotePostgresIdentifier(STATE_TABLE)} (
-                scope text PRIMARY KEY,
-                data jsonb NOT NULL,
-                updated_at timestamptz NOT NULL DEFAULT now()
-            )
-        `);
-    }
-
-    tableReady = true;
+    return firebaseStore;
 }
 
 function filePathFor(scope) {
@@ -225,70 +129,43 @@ async function writeJson(scope, data) {
 }
 
 async function readState(scope, fallback) {
-    const db = getDatabase();
-    if (!db) return readJson(scope, fallback);
+    const store = getFirebaseStore();
+    if (!store) return readJson(scope, fallback);
 
-    await ensureStateTable();
-    if (db.type === "sqlserver") {
-        const sql = require("mssql");
-        const sqlPool = await db.pool;
-        const result = await sqlPool.request()
-            .input("scope", sql.NVarChar(200), scope)
-            .query(`SELECT data FROM ${sqlServerTableName()} WHERE scope = @scope`);
+    if (store.type === "realtime") {
+        const snapshot = await store.db.ref(`${STATE_ROOT}/${scope}`).get();
+        if (!snapshot.exists()) return clone(fallback);
 
-        if (!result.recordset.length) return clone(fallback);
-
-        try {
-            return JSON.parse(result.recordset[0].data);
-        } catch (error) {
-            console.error(`Failed to parse ${scope} SQL state:`, error.message);
-            return clone(fallback);
-        }
+        const state = snapshot.val();
+        return state && Object.prototype.hasOwnProperty.call(state, "data")
+            ? state.data
+            : clone(fallback);
     }
 
-    const result = await db.pool.query(
-        `SELECT data FROM ${quotePostgresIdentifier(STATE_TABLE)} WHERE scope = $1`,
-        [scope]
-    );
+    const snapshot = await store.db.collection(STATE_COLLECTION).doc(scope).get();
+    if (!snapshot.exists) return clone(fallback);
 
-    if (!result.rowCount) return clone(fallback);
-    return result.rows[0].data || clone(fallback);
+    const state = snapshot.data();
+    return state && Object.prototype.hasOwnProperty.call(state, "data")
+        ? state.data
+        : clone(fallback);
 }
 
 async function writeState(scope, data) {
-    const db = getDatabase();
-    if (!db) return writeJson(scope, data);
+    const store = getFirebaseStore();
+    if (!store) return writeJson(scope, data);
 
-    await ensureStateTable();
-    const payload = JSON.stringify(data);
+    const payload = {
+        data,
+        updatedAt: new Date().toISOString()
+    };
 
-    if (db.type === "sqlserver") {
-        const sql = require("mssql");
-        const sqlPool = await db.pool;
-        await sqlPool.request()
-            .input("scope", sql.NVarChar(200), scope)
-            .input("data", sql.NVarChar(sql.MAX), payload)
-            .query(`
-                MERGE ${sqlServerTableName()} WITH (HOLDLOCK) AS target
-                USING (SELECT @scope AS scope, @data AS data) AS source
-                ON target.scope = source.scope
-                WHEN MATCHED THEN
-                    UPDATE SET data = source.data, updated_at = SYSUTCDATETIME()
-                WHEN NOT MATCHED THEN
-                    INSERT (scope, data, updated_at)
-                    VALUES (source.scope, source.data, SYSUTCDATETIME());
-            `);
-    } else {
-        await db.pool.query(
-            `
-                INSERT INTO ${quotePostgresIdentifier(STATE_TABLE)} (scope, data, updated_at)
-                VALUES ($1, $2::jsonb, now())
-                ON CONFLICT (scope)
-                DO UPDATE SET data = EXCLUDED.data, updated_at = now()
-            `,
-            [scope, payload]
-        );
+    if (store.type === "realtime") {
+        await store.db.ref(`${STATE_ROOT}/${scope}`).set(payload);
+        return data;
     }
+
+    await store.db.collection(STATE_COLLECTION).doc(scope).set(payload, { merge: true });
 
     return data;
 }

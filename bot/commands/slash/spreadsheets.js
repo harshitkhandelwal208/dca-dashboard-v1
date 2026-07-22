@@ -402,7 +402,7 @@ module.exports = {
                 `Output channel: ${teamConfig.outputChannelId ? `<#${teamConfig.outputChannelId}>` : "submission channel"}`,
                 `Access role: ${teamConfig.accessRoleId ? `<@&${teamConfig.accessRoleId}>` : "admins only"}`,
                 `Grouping window: **${config.spreadsheets.sessionWindowMinutes} minute(s)**`,
-                `Gemini model: **${config.spreadsheets.geminiModel || process.env.GEMINI_FLASH_MODEL || "gemini-2.5-flash"}**`,
+                `Gemini model: **${config.spreadsheets.geminiModel || process.env.GEMINI_FLASH_MODEL || "gemini-3.6-flash"}**`,
                 `Gemini timeout: **${Math.round((config.spreadsheets.geminiTimeoutMs || Number(process.env.GEMINI_TIMEOUT_MS) || 300000) / 1000)} second(s)**`,
                 `Gemini retries: **${config.spreadsheets.geminiMaxRetries ?? process.env.GEMINI_MAX_RETRIES ?? 4}**`,
                 `Raw data retention: **${config.spreadsheets.rawDataRetentionDays || 31} day(s)**`,

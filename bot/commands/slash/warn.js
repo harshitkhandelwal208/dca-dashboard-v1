@@ -1,11 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
-const { Pool } = require("pg");
-require("dotenv").config();
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Required for Railway hosting
-});
+const { addWarning } = require("../../utils/warningStore");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -19,17 +13,14 @@ module.exports = {
       option.setName("reason")
         .setDescription("Reason for the warning")
         .setRequired(true))
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages), // Restrict command usage to users with "Manage Messages"
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
   async execute(interaction) {
     const user = interaction.options.getUser("user");
     const reason = interaction.options.getString("reason") || "No reason provided.";
 
     try {
-      await pool.query(
-        "INSERT INTO warnings (user_id, guild_id, reason) VALUES ($1, $2, $3)",
-        [user.id, interaction.guild.id, reason]
-      );
+      await addWarning({ userId: user.id, guildId: interaction.guild.id, reason });
 
       return interaction.reply({ content: `✅ **${user.tag}** has been warned for: **${reason}**`, ephemeral: false });
     } catch (error) {

@@ -1,11 +1,5 @@
 const { PermissionsBitField } = require("discord.js");
-const { Pool } = require("pg");
-require("dotenv").config();
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
+const { listWarnings } = require("../../utils/warningStore");
 
 module.exports = {
   name: "warnings",
@@ -21,16 +15,13 @@ module.exports = {
     }
 
     try {
-      const result = await pool.query(
-        "SELECT reason FROM warnings WHERE user_id = $1 AND guild_id = $2",
-        [user.id, message.guild.id]
-      );
+      const warnings = await listWarnings(user.id, message.guild.id);
 
-      if (result.rows.length === 0) {
+      if (warnings.length === 0) {
         return message.reply(`**${user.tag}** has no warnings.`);
       }
 
-      const warningList = result.rows.map((row, index) => `**${index + 1}.** ${row.reason}`).join("\n");
+      const warningList = warnings.map((warning, index) => `**${index + 1}.** ${warning.reason}`).join("\n");
       message.reply(`Warnings for **${user.tag}**:\n${warningList}`);
     } catch (error) {
       console.error(error);

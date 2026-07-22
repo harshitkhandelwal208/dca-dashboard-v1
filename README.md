@@ -5,7 +5,7 @@ DCA Bot Suite contains two deployable applications that share one Discord bot to
 - `bot/` - the Discord bot runtime, slash commands, recruitment tickets, reaction roles, team counts, YouTube checks, Gemini spreadsheet generation, and automatic team-event reports.
 - `dashboard/` - the React and Express dashboard used to configure servers, channels, roles, tickets, member counts, feeds, spreadsheets, and bot logging.
 
-Both apps can use the same database through `DATABASE_URL`. PostgreSQL URLs and Azure SQL connection strings are supported. If no database URL is provided, local JSON files in `bot/data/` are used for development.
+Both apps use the same Firebase database for production state. If Firebase is not configured, local JSON files are used for development.
 
 ## Repository Layout
 
@@ -34,7 +34,7 @@ Both apps can use the same database through `DATABASE_URL`. PostgreSQL URLs and 
 - Node.js 18 or newer.
 - A Discord application with a bot user.
 - A bot token with the needed gateway intents enabled.
-- A shared database for production. PostgreSQL and Azure SQL are supported; the Azure deployment uses Azure SQL Database's free offer.
+- A Firebase project with Cloud Firestore or Realtime Database enabled for production state.
 
 The team-event spreadsheet system uses:
 
@@ -55,7 +55,7 @@ Spreadsheet Gemini keys are configured per team in the dashboard. They intention
 Optional Gemini and XLSX environment:
 
 ```env
-GEMINI_FLASH_MODEL=gemini-2.5-flash
+GEMINI_FLASH_MODEL=gemini-3.6-flash
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
 GEMINI_TIMEOUT_MS=300000
 GEMINI_MAX_RETRIES=4
@@ -96,8 +96,9 @@ Required bot environment:
 ```env
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
-DATABASE_URL=database_connection_string_shared_with_dashboard
-DATABASE_CLIENT=postgres_or_sqlserver
+FIREBASE_PROJECT_ID=your_firebase_project_id
+FIREBASE_SERVICE_ACCOUNT=service_account_json_or_base64_json
+FIREBASE_DATABASE_URL=https://your-project-id-default-rtdb.firebaseio.com
 RECRUITMENT_GEMINI_API_KEY=google_ai_studio_key_for_recruitment_license_ocr
 ```
 
@@ -108,7 +109,8 @@ DISCORD_GUILD_ID=fallback_server_id
 COMMUNITY_GUILD_ID=community_server_id
 RECRUITMENT_GUILD_ID=recruitment_server_id
 RECRUITER_ROLE_ID=role_that_can_manage_recruitment
-DATABASE_SSL=true
+FIREBASE_DATABASE_TYPE=realtime
+FIREBASE_STATE_ROOT=dca_bot_state
 PORT=3001
 ```
 
@@ -140,8 +142,9 @@ Required dashboard environment:
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
 DISCORD_CLIENT_SECRET=your_oauth_secret
-DATABASE_URL=same_database_connection_string_as_bot
-DATABASE_CLIENT=postgres_or_sqlserver
+FIREBASE_PROJECT_ID=same_firebase_project_id_as_bot
+FIREBASE_SERVICE_ACCOUNT=same_service_account_json_or_base64_json_as_bot
+FIREBASE_DATABASE_URL=same_realtime_database_url_as_bot
 DASHBOARD_BASE_URL=https://your-dashboard.example.com
 DISCORD_REDIRECT_URI=https://your-dashboard.example.com/auth/discord/callback
 DASHBOARD_SESSION_SECRET=a_long_random_secret
@@ -162,7 +165,8 @@ Optional upload environment:
 DASHBOARD_UPLOAD_CHANNEL_ID=discord_channel_for_tutorial_uploads
 DASHBOARD_UPLOAD_LIMIT=100mb
 DASHBOARD_ROLE_RECHECK_GRACE_MINUTES=30
-DATABASE_SSL=true
+FIREBASE_DATABASE_TYPE=realtime
+FIREBASE_STATE_ROOT=dca_bot_state
 ```
 
 On Vercel, prefer a Discord upload channel for tutorial videos because serverless disk storage is temporary.
@@ -266,7 +270,7 @@ Global Spreadsheet settings:
 
 - Grouping window - minutes to group screenshots from the same user, default 1.
 - Output format - `xlsx` or `fods`.
-- Gemini Flash model - defaults to `gemini-2.5-flash`.
+- Gemini Flash model - defaults to `gemini-3.6-flash`.
 - Gemini timeout ms - defaults to `300000`.
 - Gemini retries - defaults to `4`.
 - Raw data retention days - how long raw Gemini text/JSON stays in state before cleanup.
@@ -400,14 +404,42 @@ The help output covers recruitment, spreadsheets, weekly/monthly reports, member
 
 ## State Storage
 
-With `DATABASE_URL`, state is stored in the configured database table, default:
+With Firebase configured, state is stored in Firebase. Realtime Database is recommended for this app because some spreadsheet/session state can grow large; Cloud Firestore is also supported.
 
 ```env
-STATE_TABLE_NAME=dca_bot_state
-DATABASE_CLIENT=postgres_or_sqlserver
+FIREBASE_DATABASE_TYPE=realtime
+FIREBASE_DATABASE_URL=https://your-project-id-default-rtdb.firebaseio.com
+FIREBASE_STATE_ROOT=dca_bot_state
 ```
 
-Without `DATABASE_URL`, local JSON fallback files are used:
+For Cloud Firestore instead:
+
+```env
+FIREBASE_DATABASE_TYPE=firestore
+FIREBASE_STATE_COLLECTION=dca_bot_state
+```
+
+Each state scope is stored under the configured root or collection with this shape:
+
+```json
+{
+  "data": {},
+  "updatedAt": "2026-07-22T00:00:00.000Z"
+}
+```
+
+Supported Firebase credentials:
+
+```env
+FIREBASE_PROJECT_ID=your_firebase_project_id
+FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
+FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+```
+
+Use either `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_SERVICE_ACCOUNT_PATH`, or `GOOGLE_APPLICATION_CREDENTIALS`. `FIREBASE_SERVICE_ACCOUNT` can be raw JSON or base64-encoded JSON, which is usually easier on hosting platforms.
+
+Without Firebase configuration, app-local JSON fallback files are used:
 
 ```text
 bot/data/dashboardConfig.json
@@ -416,6 +448,7 @@ bot/data/recruitmentLogs.json
 bot/data/recruitmentBans.json
 bot/data/botLogs.json
 bot/data/spreadsheetSessions.json
+bot/data/warnings.json
 ```
 
 Generated spreadsheet outputs are written under:
@@ -434,7 +467,7 @@ Recommended production split:
 
 - Bot on Render or another long-running Node host.
 - Dashboard on Vercel or another web host.
-- Shared database. PostgreSQL and Azure SQL are supported.
+- Shared Firebase project.
 
 For the bot host:
 
@@ -454,7 +487,44 @@ npm run build
 npm start
 ```
 
-Use the same `DATABASE_URL` for both apps so bot runtime state and dashboard configuration stay synchronized.
+Use the same `FIREBASE_PROJECT_ID`, credentials, database type, and state root/collection for both apps so bot runtime state and dashboard configuration stay synchronized.
+
+## Migrating From Neon
+
+Before removing Neon, export the existing `dca_bot_state` rows and the legacy `warnings` table.
+
+The Firebase database should receive one entry per state scope. For Realtime Database, these are paths under `dca_bot_state`; for Firestore, these are documents in the `dca_bot_state` collection:
+
+```text
+dca_bot_state/dashboardConfig
+dca_bot_state/recruitmentTickets
+dca_bot_state/recruitmentLogs
+dca_bot_state/recruitmentBans
+dca_bot_state/botLogs
+dca_bot_state/spreadsheetSessions
+dca_bot_state/spreadsheetReportEmissions
+dca_bot_state/teamRoleAssignments
+dca_bot_state/warnings
+```
+
+For rows from the old `dca_bot_state` table, use `scope` as the Firestore document ID and put the old `data` JSON under the document's `data` field. For the old SQL `warnings` table, create one Firestore document named `warnings`:
+
+```json
+{
+  "data": {
+    "warnings": [
+      {
+        "id": "legacy-1",
+        "userId": "discord_user_id",
+        "guildId": "discord_guild_id",
+        "reason": "warning reason",
+        "createdAt": "2026-07-22T00:00:00.000Z"
+      }
+    ]
+  },
+  "updatedAt": "2026-07-22T00:00:00.000Z"
+}
+```
 
 ## Troubleshooting
 

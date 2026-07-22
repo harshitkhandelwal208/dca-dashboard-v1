@@ -1,11 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
-const { Pool } = require("pg");
-require("dotenv").config();
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Required for Railway hosting
-});
+const { clearWarnings } = require("../../utils/warningStore");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -15,18 +9,15 @@ module.exports = {
       option.setName("user")
         .setDescription("User whose warnings will be cleared")
         .setRequired(true))
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages), // Restrict to mods/admins
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
   async execute(interaction) {
     const user = interaction.options.getUser("user");
 
     try {
-      const result = await pool.query(
-        "DELETE FROM warnings WHERE user_id = $1 AND guild_id = $2 RETURNING *",
-        [user.id, interaction.guild.id]
-      );
+      const removed = await clearWarnings(user.id, interaction.guild.id);
 
-      if (result.rowCount === 0) {
+      if (removed === 0) {
         return interaction.reply({ content: `❌ **${user.tag}** has no warnings to clear.`, ephemeral: true });
       }
 

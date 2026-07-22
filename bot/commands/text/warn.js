@@ -1,11 +1,5 @@
 const { PermissionsBitField } = require("discord.js");
-const { Pool } = require("pg");
-require("dotenv").config();
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Required for Railway hosting
-});
+const { addWarning } = require("../../utils/warningStore");
 
 module.exports = {
   name: "warn",
@@ -23,10 +17,7 @@ module.exports = {
     const reason = args.slice(1).join(" ") || "No reason provided.";
 
     try {
-      await pool.query(
-        "INSERT INTO warnings (user_id, guild_id, reason) VALUES ($1, $2, $3)",
-        [user.id, message.guild.id, reason]
-      );
+      await addWarning({ userId: user.id, guildId: message.guild.id, reason });
 
       message.reply(`**${user.tag}** has been warned for: **${reason}**`);
     } catch (error) {
