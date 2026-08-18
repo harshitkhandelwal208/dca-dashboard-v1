@@ -411,6 +411,84 @@ app.listen(PORT, () => console.log(`🌐 Web server running on ${PORT}`));
 console.log("📡 Attempting Discord connection...");
 console.log(`Token configured: ${process.env.DISCORD_TOKEN ? "yes" : "no"}`);
 
+async function runDiscordStartupDiagnostics(token) {
+    const withTimeout = (promise, ms, label) => Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+    ]);
+
+    try {
+        const gatewayResponse = await withTimeout(
+            fetch("https://discord.com/api/v10/gateway"),
+            10000,
+            "Discord gateway HTTP check"
+        );
+        console.log(`Discord gateway HTTP check: ${gatewayResponse.status}`);
+    } catch (error) {
+        console.error("Discord gateway HTTP check failed:", error.message);
+    }
+
+    try {
+        const authResponse = await withTimeout(
+            fetch("https://discord.com/api/v10/users/@me", {
+                headers: { Authorization: `Bot ${token}` }
+            }),
+            10000,
+            "Discord token check"
+        );
+        console.log(`Discord token check: ${authResponse.status}`);
+    } catch (error) {
+        console.error("Discord token check failed:", error.message);
+    }
+
+    await new Promise(resolve => {
+        let settled = false;
+        const finish = message => {
+            if (settled) return;
+            settled = true;
+            console.log(message);
+            resolve();
+        };
+
+        let WebSocket;
+        try {
+            WebSocket = require("ws");
+        } catch (error) {
+            finish(`Discord WebSocket diagnostic unavailable: ${error.message}`);
+            return;
+        }
+
+        const socket = new WebSocket("wss://gateway.discord.gg/?v=10&encoding=json");
+        const timer = setTimeout(() => {
+            socket.terminate();
+            finish("Discord WebSocket diagnostic: timeout");
+        }, 15000);
+
+        socket.once("open", () => console.log("Discord WebSocket diagnostic: connected"));
+        socket.once("message", data => {
+            clearTimeout(timer);
+            let opcode = "unknown";
+            try {
+                opcode = JSON.parse(String(data)).op;
+            } catch {
+                // Keep the diagnostic safe and concise if Discord sends invalid data.
+            }
+            socket.close();
+            finish(`Discord WebSocket diagnostic: received gateway packet (op ${opcode})`);
+        });
+        socket.once("error", error => {
+            clearTimeout(timer);
+            finish(`Discord WebSocket diagnostic failed: ${error.message}`);
+        });
+        socket.once("close", (code, reason) => {
+            if (!settled) {
+                clearTimeout(timer);
+                finish(`Discord WebSocket diagnostic closed: ${code}${reason ? ` (${String(reason)})` : ""}`);
+            }
+        });
+    });
+}
+
 async function startDiscordClient() {
     const token = process.env.DISCORD_TOKEN;
     if (!token) {
@@ -419,6 +497,7 @@ async function startDiscordClient() {
     }
 
     try {
+        await runDiscordStartupDiagnostics(token);
         await Promise.race([
             client.login(token),
             new Promise((_, reject) => {
