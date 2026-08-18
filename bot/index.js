@@ -1,7 +1,10 @@
 const { Client, GatewayIntentBits, Collection, Partials } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config();
+const envPath = path.resolve(__dirname, "../.env");
+require("dotenv").config({
+    path: fs.existsSync(envPath) ? envPath : path.resolve(__dirname, ".env")
+});
 
 const bundledFontConfig = path.join(__dirname, "fonts", "fonts.conf");
 if (!process.env.FONTCONFIG_FILE && fs.existsSync(bundledFontConfig)) {
@@ -25,6 +28,7 @@ const { startTeamRoleScheduler } = require("./utils/teamRoleScheduler");
 const { handleWelcomeTeamButton } = require("./utils/welcomeRoleManager");
 const { startYouTubeNotifier } = require("./utils/youtubeManager");
 const { handleSpreadsheetMessage, startSpreadsheetReportScheduler } = require("./utils/spreadsheetManager");
+const { registerDashboardRoutes } = require("../dashboard/server/dashboardRoutes");
 
 // Error handlers
 process.on("unhandledRejection", reason => console.error("Unhandled Rejection:", reason));
@@ -362,7 +366,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "512kb" }));
+
+// The bot and dashboard share this single HTTP process and port.
+registerDashboardRoutes(app);
 
 app.get("/", (req, res) => {
     res.status(client.isBotReady ? 200 : 503).json({
@@ -412,7 +419,12 @@ async function startDiscordClient() {
     }
 
     try {
-        await client.login(token);
+        await Promise.race([
+            client.login(token),
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("Discord gateway connection timed out after 60 seconds")), 60000);
+            })
+        ]);
     } catch (error) {
         console.error("Discord login failed:", error);
         process.exit(1);
@@ -421,16 +433,3 @@ async function startDiscordClient() {
 
 startDiscordClient();
 
-let attempts = 0;
-const checkInterval = setInterval(() => {
-    attempts++;
-    console.log(`[${attempts}] Checking connection status...`);
-    if (client.isReady()) {
-        console.log("✅ Bot is READY!");
-        clearInterval(checkInterval);
-    }
-    if (attempts >= 12) {
-        clearInterval(checkInterval);
-        console.error("❌ Bot failed to connect after 35 seconds");
-    }
-}, 5000);

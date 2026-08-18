@@ -6,8 +6,8 @@
   "scripts": {
     "postinstall": "npm install --prefix bot && npm install --prefix dashboard",
     "build": "npm run build --prefix dashboard",
-    "start": "PORT=10000 npm run start:bot & npm run start:dashboard",
-    "start:bot": "npm --prefix bot start",
+    "start": "node start.js",
+    "start:bot": "node start.js",
     "start:dashboard": "npm --prefix dashboard start",
     "deploy:commands": "npm --prefix bot run deploy:commands",
     "test:spreadsheets": "npm --prefix bot run test:spreadsheets"
