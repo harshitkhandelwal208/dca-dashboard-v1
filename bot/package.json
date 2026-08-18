@@ -13,6 +13,7 @@
     "test:spreadsheets": "node scripts/test-spreadsheets.js"
   },
   "dependencies": {
+    "axios": "^1.19.0",
     "discord.js": "^14.15.0",
     "dotenv": "^16.0.3",
     "exceljs": "^4.4.0",
