@@ -4,17 +4,13 @@ const { logAction } = require("../utils/logStore");
 const { renderMemberTemplate } = require("../utils/messageTemplates");
 const { getCommunityGuildId } = require("../utils/serverConfig");
 
-function ensureMemberMention(content, memberId) {
-    const text = String(content || "").trim();
-    const mention = `<@${memberId}>`;
-    return text.includes(mention) ? text : `${mention} ${text}`.trim();
-}
-
 module.exports = {
     name: Events.GuildMemberRemove,
+
     async execute(member) {
         const config = await loadDashboardConfig();
         const { leave } = config;
+
         const communityGuildId = getCommunityGuildId(config);
         if (communityGuildId && member.guild.id !== communityGuildId) return;
         if (!leave.enabled || !leave.channelId) return;
@@ -23,20 +19,55 @@ module.exports = {
             const channel = await member.guild.channels.fetch(leave.channelId);
             if (!channel?.isTextBased?.()) return;
 
+            
+            const displayName =
+                member.user?.globalName ||
+                member.user?.username ||
+                "Unknown User";
+
+            const username =
+                member.user?.username ||
+                "unknown";
+
+            
+            let message = renderMemberTemplate(leave.message, member);
+
+          
+            message = message.replace(
+                new RegExp(`<@!?${member.id}>`, "g"),
+                `**${displayName}** (@${username})`
+            );
+
+            if (
+                !message.includes(displayName) &&
+                !message.includes(`@${username}`)
+            ) {
+                message = `**${displayName}** (@${username}) ${message}`.trim();
+            }
+
             await channel.send({
-                content: ensureMemberMention(renderMemberTemplate(leave.message, member), member.id),
-                allowedMentions: { users: [member.id], roles: [] }
+                content: message,
+                allowedMentions: {
+                    users: [],
+                    roles: []
+                }
             });
 
             await logAction(member.client, {
                 type: "system",
                 title: "Member Left",
-                message: `<@${member.id}> left the server.`,
+                message: `**${displayName}** (@${username}) left the server.`,
                 guildId: member.guild.id,
                 targetId: member.id,
-                targetTag: member.user?.tag || member.user?.username || member.id,
-                metadata: { memberCount: member.guild.memberCount }
+                targetTag:
+                    member.user?.tag ||
+                    member.user?.username ||
+                    member.id,
+                metadata: {
+                    memberCount: member.guild.memberCount
+                }
             });
+
         } catch (error) {
             console.error("Error sending leave message:", error);
         }
