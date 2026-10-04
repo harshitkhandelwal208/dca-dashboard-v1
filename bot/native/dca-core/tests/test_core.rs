@@ -52,9 +52,15 @@ fn sample_session(id: &str, date: &str, title: &str, kab_first: bool) -> Spreads
 
 #[test]
 fn event_points_follow_the_rank_table() {
-    assert_eq!(event_points_for_rank(1), 300);
-    assert_eq!(event_points_for_rank(57), 7);
-    assert_eq!(event_points_for_rank(100), 0);
+    // Values read off the game's standings screens.
+    for (rank, points) in [(1, 300), (2, 280), (28, 47), (49, 11), (50, 11), (51, 10), (57, 7), (84, 1), (96, 1)] {
+        assert_eq!(event_points_for_rank(rank), points, "rank {rank}");
+    }
+    // The 96 ranks of the sample event add up to the two team totals on its result screen (3312 + 1210).
+    assert_eq!((1..=96).map(event_points_for_rank).sum::<i64>(), 4522);
+    // A team has at most 50 drivers: ranks up to 100 keep the single point; beyond that and rank 0 there is nothing.
+    assert_eq!(event_points_for_rank(100), 1);
+    assert_eq!(event_points_for_rank(101), 0);
     assert_eq!(event_points_for_rank(0), 0);
 }
 

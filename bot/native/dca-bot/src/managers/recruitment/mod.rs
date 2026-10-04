@@ -793,46 +793,6 @@ fn auto_archive(minutes: u32) -> AutoArchiveDuration {
     }
 }
 
-/// Pinging the recruiter role notifies recruiters but does not put them in the thread (and a thread is only in a
-/// person's list once they are a member), so the role's members are added in the background.
-fn add_recruiters_in_background(app: &App, guild: GuildId, thread: ChannelId, role: RoleId, applicant: UserId) {
-    const MAX_RECRUITERS: usize = 40;
-    let http = app.http.clone();
-    let bot = *app.bot_id.read().unwrap();
-    tokio::spawn(async move {
-        let mut recruiters: Vec<UserId> = Vec::new();
-        let mut after: Option<UserId> = None;
-        for _ in 0..10 {
-            let page = match guild.members(&http, Some(1000), after).await {
-                Ok(page) => page,
-                Err(error) => {
-                    tracing::warn!("could not list the members of the recruiter role for thread {thread}: {error}");
-                    return;
-                }
-            };
-            let Some(last) = page.last().map(|m| m.user.id) else { break };
-            let full = page.len() == 1000;
-            recruiters.extend(page.iter().filter(|m| m.roles.contains(&role) && !m.user.bot && m.user.id != applicant && Some(m.user.id) != bot).map(|m| m.user.id));
-            if !full {
-                break;
-            }
-            after = Some(last);
-        }
-        recruiters.truncate(MAX_RECRUITERS);
-        let (mut added, mut failed) = (0, 0);
-        for id in &recruiters {
-            match thread.add_thread_member(&http, *id).await {
-                Ok(()) => added += 1,
-                Err(error) => {
-                    failed += 1;
-                    tracing::warn!("could not add recruiter {id} to thread {thread}: {error}");
-                }
-            }
-        }
-        tracing::info!("thread {thread}: added {added} recruiter(s) ({failed} failed)");
-    });
-}
-
 pub async fn create_application_thread(app: &App, session: &ApplySession) -> Result<(GuildChannel, Ticket), String> {
     let config = app.config().await;
     let channel = session.channel_id.to_channel(&app.http).await.map_err(|_| "This channel does not support threads.".to_string())?;
@@ -868,9 +828,6 @@ pub async fn create_application_thread(app: &App, session: &ApplySession) -> Res
     }
 
     let role = recruiter_role_id(&config);
-    if let Some(rid) = role_id(&role) {
-        add_recruiters_in_background(app, guild_channel.guild_id, thread.id, rid, session.user_id);
-    }
     let intro = if role.is_empty() {
         format!("New recruitment application from <@{}>. Configure the recruiter role in the dashboard to ping recruiters.", session.user_id)
     } else {
@@ -943,7 +900,6 @@ pub async fn claim_ticket(app: &App, r: &Responder) {
     .await
     .ok()
     .flatten();
-    let _ = thread.id.add_thread_member(&app.http, r.user().id).await;
     let _ = thread.id.say(&app.http, format!("Ticket claimed by <@{}>.", r.user().id)).await;
     log_action(
         app,

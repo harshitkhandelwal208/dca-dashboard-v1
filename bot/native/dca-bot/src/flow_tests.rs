@@ -302,26 +302,32 @@ async fn the_apply_channel_is_swept_of_everything_but_the_panel() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_ticket_thread_gets_the_applicant_and_the_recruiters() {
+async fn recruiters_are_reached_once_by_the_role_ping_in_the_first_message() {
     if !models_ready() {
         eprintln!("skipping: PaddleOCR models not downloaded");
         return;
     }
-    let rig = Rig::new("apply-members", true).await;
-    let (recruiter_a, recruiter_b, bystander) = (100_000_000_000_000_071u64, 100_000_000_000_000_072u64, 100_000_000_000_000_073u64);
-    rig.mock.set_member_roles(recruiter_a, &[RECRUITER_ROLE]);
-    rig.mock.set_member_roles(recruiter_b, &[RECRUITER_ROLE, 5]);
-    rig.mock.set_member_roles(bystander, &[5]);
+    let rig = Rig::new("apply-ping", true).await;
+    // Recruiters exist, but nobody is added to the thread one by one: every manual add pings and posts a line in the thread.
+    rig.mock.set_member_roles(100_000_000_000_000_071, &[RECRUITER_ROLE]);
+    rig.mock.set_member_roles(100_000_000_000_000_072, &[RECRUITER_ROLE]);
     let task = start_apply(&rig).await;
     let licence = rig.image("fixtures/guides/driver-license.jpg");
     let event = rig.image("fixtures/guides/team-event-score.jpg");
     upload(&rig, &[("driver-license.jpg", licence), ("team-event-score.jpg", event)]).await;
     task.await.unwrap();
 
-    let added = |user: u64| rig.mock.calls_matching("PUT", &format!("/thread-members/{user}")).len();
-    wait_for("both recruiters to be added", || added(recruiter_a) == 1 && added(recruiter_b) == 1).await;
-    assert_eq!(added(bystander), 0, "only members of the recruiter role are added");
-    assert_eq!(rig.mock.calls_matching("PUT", "/thread-members/").len(), 3, "the applicant and the two recruiters");
+    let adds = rig.mock.calls_matching("PUT", "/thread-members/");
+    assert_eq!(adds.len(), 1, "only the applicant is added: {adds:?}");
+    assert!(adds[0].path.ends_with(&format!("/thread-members/{APPLICANT}")));
+
+    let tickets = list_tickets(&rig.app.store, &TicketFilter::default()).await;
+    let thread: u64 = tickets[0].thread_id.parse().unwrap();
+    let first = rig.mock.messages_in(thread);
+    let intro = first.first().expect("the first message in the thread");
+    assert!(intro["content"].as_str().unwrap().starts_with(&format!("<@&{RECRUITER_ROLE}>")), "the role is pinged in the first message: {intro}");
+    let pings = rig.mock.calls_matching("POST", &format!("/channels/{thread}/messages"));
+    assert_eq!(pings[0].body["allowed_mentions"]["roles"], serde_json::json!([RECRUITER_ROLE.to_string()]));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -502,6 +508,9 @@ fn check_sample_event(session: &dca_state::models::SpreadsheetSession) {
     let scores = session.metadata.team_scores.as_ref().expect("team scores from the result screen");
     assert_eq!((scores.own, scores.opponent), (Some(3312.0), Some(1210.0)));
     assert!(session.metadata.opponent_team_name.to_lowercase().contains("liberty"), "{:?}", session.metadata.opponent_team_name);
+    // The points of each rank are the game's own: the players' points add up to the two team totals on the result screen.
+    let points_of = |own: bool| session.players.iter().filter(|p| (p.team_type == "own") == own).map(|p| p.points.unwrap_or(0)).sum::<i64>();
+    assert_eq!((points_of(true), points_of(false)), (3312, 1210), "own and opponent points summed over the players");
     // The first three are on the yellow (own) side, ranks 5, 6 and 12 on the blue side.
     for rank in [1, 2, 3] {
         assert_eq!(session.players.iter().find(|p| p.rank == rank).unwrap().team_type, "own", "rank {rank}");

@@ -8,9 +8,12 @@ use dca_state::models::*;
 use serde_json::json;
 use std::collections::BTreeMap;
 
+/// Points per rank in an HCR2 team event, read off the game's own standings screens (the number left of each rank):
+/// ranks 1-96 of a real 96-player event, whose two team totals (3312 + 1210) equal the sum of this table over those
+/// ranks. Ranks 97-100 (a team has at most 50 drivers) continue the run of single points.
 pub const HCR2_TEAM_EVENT_POINTS_BY_RANK: &[i64] = &[
     300, 280, 262, 244, 228, 213, 198, 185, 173, 161, 150, 140, 131, 122, 114, 107, 99, 93, 87, 81, 75, 70, 66, 61, 57, 54, 50, 47, 44, 41, 38, 35, 33, 31, 29, 27, 25, 24, 22, 21, 19, 18, 17, 16, 15,
-    14, 13, 12, 11, 10, 9, 9, 9, 8, 8, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    14, 13, 12, 11, 11, 10, 9, 9, 8, 8, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
 pub fn event_points_for_rank(rank: u32) -> i64 {
