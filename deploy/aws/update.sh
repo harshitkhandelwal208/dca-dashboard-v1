@@ -7,11 +7,12 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 BRANCH="${DCA_BRANCH:-main}"
 # Refresh the service unit, the health check and this script itself from the repository.
 RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}/deploy/aws"
-for f in dca-bot.service dca-health.service dca-health.timer; do curl -fsSL "$RAW/$f" -o "/etc/systemd/system/$f"; done
+for f in dca-bot.service dca-health.service dca-health.timer dca-autoupdate.service dca-autoupdate.timer; do curl -fsSL "$RAW/$f" -o "/etc/systemd/system/$f"; done
 curl -fsSL "$RAW/dca-health.sh" -o /usr/local/bin/dca-health && chmod 755 /usr/local/bin/dca-health
+curl -fsSL "$RAW/dca-autoupdate.sh" -o /usr/local/bin/dca-autoupdate && chmod 755 /usr/local/bin/dca-autoupdate
 curl -fsSL "$RAW/update.sh" -o /usr/local/bin/dca-update.new && chmod 755 /usr/local/bin/dca-update.new && mv /usr/local/bin/dca-update.new /usr/local/bin/dca-update
 systemctl daemon-reload
-systemctl enable --now dca-health.timer >/dev/null 2>&1 || true
+systemctl enable --now dca-health.timer dca-autoupdate.timer >/dev/null 2>&1 || true
 curl -fsSL "https://github.com/${REPO}/releases/download/rolling/dca-bot-linux-x86_64.tar.gz" -o "$TMP/dca.tar.gz"
 tar -xzf "$TMP/dca.tar.gz" -C "$TMP"
 install -d -o dca -g dca /opt/dca/bin

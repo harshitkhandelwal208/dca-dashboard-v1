@@ -1,0 +1,10 @@
+[Unit]
+Description=Look for a newer DCA bot build every 2 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

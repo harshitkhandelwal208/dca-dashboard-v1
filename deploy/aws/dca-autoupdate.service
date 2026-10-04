@@ -1,0 +1,6 @@
+[Unit]
+Description=Install the newest DCA bot build
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/dca-autoupdate

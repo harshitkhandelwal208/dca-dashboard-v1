@@ -217,7 +217,7 @@ Without Firebase, scopes are JSON files in `bot/data/` (override with `DCA_DATA_
 
 ## Deployment
 
-Production runs on a single AWS EC2 instance (about $15/month): see [deploy/aws/README.md](deploy/aws/README.md). GitHub Actions builds the bot and the dashboard on every push to `main`; `deploy/aws/provision.sh` creates the instance and `sudo dca-update` on it installs the latest build. The same release build runs on any Ubuntu 24.04 host with `deploy/aws/bootstrap.sh` and `update.sh`. Use the same Firebase project and credentials as before. Register `https://<your-host>/auth/discord/callback` as the OAuth redirect.
+Production runs on a single AWS EC2 instance (about $15/month): see [deploy/aws/README.md](deploy/aws/README.md). Pushing to `main` deploys by itself: GitHub Actions tests it, builds the bot and the dashboard once the tests pass, and the server installs the new build within a few minutes (and goes back to the previous one if it does not start properly). `deploy/aws/provision.sh` creates the instance. The same release build runs on any Ubuntu 24.04 host with `deploy/aws/bootstrap.sh` and `update.sh`. Use the same Firebase project and credentials as before. Register `https://<your-host>/auth/discord/callback` as the OAuth redirect.
 
 ## Tests
 

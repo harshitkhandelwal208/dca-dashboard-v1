@@ -27,14 +27,18 @@ Afterwards:
 
 ## Staying up
 
-`systemd` restarts the bot whenever it exits; `dca-health.timer` checks `/health` every minute and restarts the bot when the Discord gateway has not been connected for 5 checks in a row; a CloudWatch alarm (`dca-bot-auto-recover`) lets AWS move the instance to healthy hardware if the host fails; Caddy renews the certificate by itself. State lives in Firebase, so a restart or a rebuilt instance loses nothing.
+`systemd` restarts the bot whenever it exits; `dca-autoupdate.timer` installs new builds (see Updating); `dca-health.timer` checks `/health` every minute and restarts the bot when the Discord gateway has not been connected for 5 checks in a row; a CloudWatch alarm (`dca-bot-auto-recover`) lets AWS move the instance to healthy hardware if the host fails; Caddy renews the certificate by itself. State lives in Firebase, so a restart or a rebuilt instance loses nothing.
 
 ## Updating
 
-Push to `main`; when the "Release build" workflow is green:
+Nothing to do: push to `main`. CI runs the tests; when they pass, the "Release build" workflow publishes the build as the `rolling` release (a failed CI run publishes nothing, and a newer commit replaces a build that is still running). The server looks at that release every 2 minutes (`dca-autoupdate.timer`), installs a newer build and checks that the bot comes up connected within 2 minutes; if it does not, the previous build is put back and that version is not tried again until the next commit. A push is live about 8 minutes later.
+
+Nothing connects to the server and GitHub holds no credentials for it: the server only reads the public release.
 
 ```bash
-ssh -i ~/.ssh/dca-bot.pem ubuntu@<ip> sudo dca-update
+sudo journalctl -t dca-autoupdate -n 20      # what the updater did
+sudo systemctl start dca-autoupdate          # check right now instead of waiting
+sudo dca-update                              # install the latest build by hand
 ```
 
 ## Operating

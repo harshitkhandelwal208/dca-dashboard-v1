@@ -1,17 +1,27 @@
 name: Release build
-# Builds the bot + dashboard on every push to main and publishes them as the rolling release that the server installs
-# with `sudo dca-update` (see deploy/aws/README.md).
+# Builds the bot + dashboard once CI has passed on a push to main and publishes them as the rolling release. The server
+# checks that release every couple of minutes and installs a newer build by itself (deploy/aws/dca-autoupdate.sh).
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
+# Only the newest commit matters: a newer run replaces one that is still building.
+concurrency:
+  group: release
+  cancel-in-progress: true
 jobs:
   build:
+    # Never publish from a pull request or from a CI run that failed.
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -35,6 +45,7 @@ jobs:
           cp -r bot/fonts pkg/dca-bot/fonts
           cp -r bot/assets pkg/dca-bot/assets
           echo "$(git rev-parse --short HEAD) $(date -u +%Y-%m-%dT%H:%MZ)" > pkg/dca-bot/VERSION
+          cp pkg/dca-bot/VERSION VERSION
           tar -czf dca-bot-linux-x86_64.tar.gz -C pkg dca-bot
       - name: Publish the rolling release
         env:
@@ -42,3 +53,5 @@ jobs:
         run: |
           gh release view rolling >/dev/null 2>&1 || gh release create rolling --prerelease --title "Rolling build" --notes "Latest build of main (installed by deploy/aws/update.sh)."
           gh release upload rolling dca-bot-linux-x86_64.tar.gz --clobber
+          # The version marker goes last: the server installs when it changes, so the build must already be there.
+          gh release upload rolling VERSION --clobber
