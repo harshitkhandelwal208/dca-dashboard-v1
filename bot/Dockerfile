@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY bot/scripts/download-models.sh /download-models.sh
 RUN sh /download-models.sh /models
 
-# Stage 3: the Rust binary (ONNX Runtime is linked statically)
-FROM rust:bookworm AS builder
+# Stage 3: the Rust binary (ONNX Runtime is linked statically and needs glibc >= 2.38, hence trixie)
+FROM rust:trixie AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config cmake && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY bot/native/ native/
@@ -24,7 +24,7 @@ RUN cd native && cargo build --release -p dca-bot \
  && cp target/release/dca-bot /build/dca-bot
 
 # Stage 4: runtime
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libstdc++6 \
