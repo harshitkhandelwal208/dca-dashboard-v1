@@ -120,9 +120,11 @@ async fn serve_file(State((inner, _, _)): State<St>, axum::extract::Path((n, nam
 }
 
 fn message_json(id: u64, channel: &str, content: &str, embeds: Value, attachments: Value, components: Value) -> Value {
+    // Posted "a minute ago", so age-based logic (the panel channel sweep) sees an ordinary message.
+    let posted = serenity::all::Timestamp::from_unix_timestamp(serenity::all::Timestamp::now().unix_timestamp() - 60).unwrap().to_string();
     json!({
         "id": id.to_string(), "channel_id": channel, "author": user_json(&BOT_ID.to_string(), "dcabot", true), "content": content,
-        "timestamp": "2026-10-04T12:00:00.000000+00:00", "edited_timestamp": null, "tts": false, "mention_everyone": false,
+        "timestamp": posted, "edited_timestamp": null, "tts": false, "mention_everyone": false,
         "mentions": [], "mention_roles": [], "attachments": attachments, "embeds": embeds, "pinned": false, "type": 0, "components": components,
     })
 }

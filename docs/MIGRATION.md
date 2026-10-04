@@ -39,6 +39,7 @@ The Rust bot is a port of the Node bot (discord.js, Express, Firebase, Gemini). 
 - The YouTube check interval is re-read from the config on every cycle (a dashboard change applies without a restart).
 - DM-mirrored screenshots get a fresh signed URL whenever they are needed, so closing an old ticket does not depend on expired links.
 - If a private thread cannot be created the bot falls back to a public thread instead of failing the application.
+- The Apply channel (`#join-dc`) is emptied of everything except the panel every 15 seconds (the old bot did it once a minute, and only when the panel refresh succeeded): chat, uploads, system messages, in one bulk request, with a 5 second grace so an upload being picked up is not pulled away.
 - The members of the recruiter role are added to every new ticket thread (in the background, at most 40), and the recruiter who claims a ticket is added too. Pinging a role notifies people but never put them in the thread. Failures to add anyone are logged instead of ignored.
 - Event-name comparison for weekly reports tolerates OCR differences in spacing and case.
 - A panic in a background task is isolated (the release build unwinds instead of aborting).

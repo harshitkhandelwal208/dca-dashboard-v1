@@ -151,6 +151,8 @@ async fn run_ready_tasks(app: Arc<App>) {
         }
     });
 
+    recruitment::start_panel_sweeper(app.clone());
+
     // Panel self-heal (the old keep-alive interval).
     let heal = app.clone();
     tokio::spawn(async move {

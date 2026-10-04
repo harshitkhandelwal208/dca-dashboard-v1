@@ -243,6 +243,25 @@ async fn a_licence_and_event_screenshots_in_one_message_create_the_ticket_automa
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_apply_channel_is_swept_of_everything_but_the_panel() {
+    let rig = Rig::new("sweep", false).await;
+    let channel = ChannelId::new(PANEL);
+    let panel = channel.say(&rig.app.http, "panel").await.unwrap();
+    let panel_id = panel.id.to_string();
+    update_config(&rig.app.store, |c| c.recruitment.panel_message_id = panel_id.clone()).await.unwrap();
+    for text in ["hello", "how do I apply?", "anyone here"] {
+        channel.say(&rig.app.http, text).await.unwrap();
+    }
+    let removed = crate::managers::recruitment::clean_recruitment_panel_channel(&rig.app, None).await;
+    assert_eq!(removed, 3);
+    assert_eq!(rig.mock.calls_matching("POST", "/messages/bulk-delete").len(), 1, "one bulk request, not three");
+    let left = rig.mock.messages_in(PANEL);
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert_eq!(left[0]["id"], panel.id.to_string());
+    assert_eq!(crate::managers::recruitment::clean_recruitment_panel_channel(&rig.app, None).await, 0, "nothing left to remove");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_ticket_thread_gets_the_applicant_and_the_recruiters() {
     if !models_ready() {
         eprintln!("skipping: PaddleOCR models not downloaded");

@@ -229,7 +229,12 @@ pub async fn ensure_recruitment_panel(app: &App) -> PanelSync {
     PanelSync { skipped: false, reason: String::new(), created, channel_id: channel.to_string(), message_id: message.id.to_string() }
 }
 
-/// Delete everything in the panel channel except the panel itself (screenshots must not stay visible).
+/// Messages younger than this are left alone so an upload that is being picked up by an Apply session is not removed
+/// from under it (the session deletes the upload itself once it has the image).
+const PANEL_GRACE_SECS: i64 = 5;
+
+/// Delete everything in the panel channel except the panel itself (screenshots and chatter must not stay visible).
+/// Returns the number of messages deleted.
 pub async fn clean_recruitment_panel_channel(app: &App, config: Option<&DashboardConfig>) -> usize {
     let owned;
     let config = match config {
@@ -241,24 +246,45 @@ pub async fn clean_recruitment_panel_channel(app: &App, config: Option<&Dashboar
     };
     let (Some(channel), Some(panel)) = (channel_id(&config.recruitment.panel_channel_id), snowflake(&config.recruitment.panel_message_id)) else { return 0 };
     let panel = MessageId::new(panel);
+    let now = Timestamp::now().unix_timestamp();
     let (mut deleted, mut scanned, mut before): (usize, usize, Option<MessageId>) = (0, 0, None);
     while scanned < 500 {
         let mut builder = GetMessages::new().limit(100);
         if let Some(b) = before {
             builder = builder.before(b);
         }
-        let Ok(messages) = channel.messages(&app.http, builder).await else { break };
+        let messages = match channel.messages(&app.http, builder).await {
+            Ok(messages) => messages,
+            Err(error) => {
+                tracing::warn!("could not read the panel channel {channel} to clean it: {error}");
+                break;
+            }
+        };
         if messages.is_empty() {
             break;
         }
         scanned += messages.len();
         before = messages.last().map(|m| m.id);
-        for m in &messages {
-            if m.id == panel {
-                continue;
+        let doomed: Vec<&Message> = messages.iter().filter(|m| m.id != panel && now - m.timestamp.unix_timestamp() >= PANEL_GRACE_SECS).collect();
+        // Messages under 14 days old can go in one bulk request; the rest one by one.
+        let (recent, old): (Vec<&Message>, Vec<&Message>) = doomed.into_iter().partition(|m| now - m.timestamp.unix_timestamp() < 13 * 86_400);
+        let mut singles: Vec<MessageId> = old.iter().map(|m| m.id).collect();
+        if recent.len() >= 2 {
+            let ids: Vec<MessageId> = recent.iter().map(|m| m.id).collect();
+            match channel.delete_messages(&app.http, ids.clone()).await {
+                Ok(()) => deleted += ids.len(),
+                Err(error) => {
+                    tracing::warn!("bulk delete in the panel channel failed ({error}); deleting one by one");
+                    singles.extend(ids);
+                }
             }
-            if channel.delete_message(&app.http, m.id).await.is_ok() {
-                deleted += 1;
+        } else {
+            singles.extend(recent.iter().map(|m| m.id));
+        }
+        for id in singles {
+            match channel.delete_message(&app.http, id).await {
+                Ok(()) => deleted += 1,
+                Err(error) => tracing::warn!("could not delete message {id} in the panel channel: {error}"),
             }
         }
         if messages.len() < 100 {
@@ -266,6 +292,24 @@ pub async fn clean_recruitment_panel_channel(app: &App, config: Option<&Dashboar
         }
     }
     deleted
+}
+
+/// Keeps the Apply channel empty apart from the panel: a sweep every 15 seconds, independent of the panel refresh.
+pub fn start_panel_sweeper(app: Arc<App>) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(15));
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            if !app.config().await.recruitment.enabled {
+                continue;
+            }
+            let removed = clean_recruitment_panel_channel(&app, None).await;
+            if removed > 0 {
+                tracing::info!("Cleaned {removed} message(s) from the Apply channel.");
+            }
+        }
+    });
 }
 
 // ----------------------------------------------------------------------------------- permissions
