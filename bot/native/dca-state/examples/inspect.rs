@@ -20,6 +20,12 @@ async fn main() {
     println!("member counts: {} teams | reaction roles: {} groups | youtube feeds: {} | spreadsheet teams: {} (enabled {})", config.member_counts.teams.len(), config.reaction_roles.len(), config.youtube.feeds.len(), config.spreadsheets.teams.len(), config.spreadsheets.teams.iter().filter(|t| t.enabled).count());
     let tickets = list_tickets(&store, &TicketFilter::default()).await;
     println!("tickets: {} ({} open)", tickets.len(), tickets.iter().filter(|t| t.status == "open").count());
+    let mut newest: Vec<_> = tickets.iter().collect();
+    newest.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    for t in newest.iter().take(3) {
+        println!("ticket {} | guild {} | channel {} | applicant {} | {} | {}", t.thread_id, t.guild_id, t.channel_id, t.applicant_id, t.status, t.created_at);
+    }
+    println!("private threads: {}", config.recruitment.private_threads);
     println!("recruitment logs: {} | bans: {} | bot logs: {}", list_recruitment_logs(&store, 500).await.len(), list_recruitment_bans(&store).await.len(), list_bot_logs(&store, 500, "").await.len());
     let sessions = list_sessions(&store, &SessionFilter::default()).await;
     println!("spreadsheet sessions: {} ({} processed, {} with stored readings)", sessions.len(), sessions.iter().filter(|s| s.status == "processed").count(), sessions.iter().filter(|s| !s.readings.is_empty()).count());

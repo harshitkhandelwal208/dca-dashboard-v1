@@ -243,6 +243,29 @@ async fn a_licence_and_event_screenshots_in_one_message_create_the_ticket_automa
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_ticket_thread_gets_the_applicant_and_the_recruiters() {
+    if !models_ready() {
+        eprintln!("skipping: PaddleOCR models not downloaded");
+        return;
+    }
+    let rig = Rig::new("apply-members", true).await;
+    let (recruiter_a, recruiter_b, bystander) = (100_000_000_000_000_071u64, 100_000_000_000_000_072u64, 100_000_000_000_000_073u64);
+    rig.mock.set_member_roles(recruiter_a, &[RECRUITER_ROLE]);
+    rig.mock.set_member_roles(recruiter_b, &[RECRUITER_ROLE, 5]);
+    rig.mock.set_member_roles(bystander, &[5]);
+    let task = start_apply(&rig).await;
+    let licence = rig.image("fixtures/guides/driver-license.jpg");
+    let event = rig.image("fixtures/guides/team-event-score.jpg");
+    upload(&rig, &[("driver-license.jpg", licence), ("team-event-score.jpg", event)]).await;
+    task.await.unwrap();
+
+    let added = |user: u64| rig.mock.calls_matching("PUT", &format!("/thread-members/{user}")).len();
+    wait_for("both recruiters to be added", || added(recruiter_a) == 1 && added(recruiter_b) == 1).await;
+    assert_eq!(added(bystander), 0, "only members of the recruiter role are added");
+    assert_eq!(rig.mock.calls_matching("PUT", "/thread-members/").len(), 3, "the applicant and the two recruiters");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_screenshot_that_is_not_the_game_gets_the_guide_and_another_try() {
     if !models_ready() {
         eprintln!("skipping: PaddleOCR models not downloaded");

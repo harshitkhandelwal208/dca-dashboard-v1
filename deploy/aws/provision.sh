@@ -5,7 +5,7 @@
 #   deploy/aws/provision.sh /path/to/production.env
 #
 # production.env holds the bot's settings (see .env.example). `__DOMAIN__` in it is replaced by the instance's
-# address. Safe to run again: existing resources are reused. Costs about $14/month in ap-southeast-2
+# address. Safe to run again: existing resources are reused. Costs about $15/month in ap-southeast-2
 # (t3.micro + 20 GB disk + public IPv4).
 set -euo pipefail
 

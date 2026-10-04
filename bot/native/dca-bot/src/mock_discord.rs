@@ -281,6 +281,10 @@ async fn handle(State((inner, next, base)): State<St>, request: Request) -> Resp
         (Method::GET, ["guilds", _, "channels"]) => ok(json!([])),
         (Method::GET, ["guilds", _, "bans", _]) => (StatusCode::NOT_FOUND, axum::Json(json!({ "message": "Unknown Ban", "code": 10026 }))).into_response(),
         (Method::PUT, ["guilds", _, "bans", _]) | (Method::DELETE, ["guilds", _, "bans", _]) | (Method::DELETE, ["guilds", _, "members", _]) | (Method::PATCH, ["guilds", _, "members", _]) => no_content(),
+        (Method::GET, ["guilds", _, "members"]) => {
+            let members: Vec<Value> = inner.lock().unwrap().roles.iter().map(|(uid, roles)| json!({ "user": user_json(uid, &format!("user{}", &uid[uid.len().saturating_sub(4)..]), false), "roles": roles, "joined_at": "2026-01-01T00:00:00.000000+00:00", "deaf": false, "mute": false, "flags": 0 })).collect();
+            ok(Value::Array(members))
+        }
         (Method::GET, ["guilds", id, "members", uid]) => {
             let roles = inner.lock().unwrap().roles.get(*uid).cloned().unwrap_or_default();
             let _ = id;

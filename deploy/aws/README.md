@@ -5,7 +5,7 @@ One small EC2 instance runs the bot and the dashboard (a single Rust process) be
 | | |
 | --- | --- |
 | Region / instance | ap-southeast-2 (Sydney; override with `AWS_REGION`, e.g. us-east-1 is closest to Discord's gateway), `t3.micro` (2 vCPU burst, 1 GB) + 2 GB swap, Ubuntu 24.04, 20 GB gp3, standard CPU credits (never billed for bursting) |
-| Cost | about $14 per month (instance $7.6, disk $1.9, public IPv4 $3.7): roughly $80 for six months |
+| Cost | about $15.2 per month (instance $9.64 at $0.0132/h in Sydney, disk $1.90, public IPv4 $3.65; traffic and the CloudWatch alarm are inside the free allowance): about $91 for six months, which leaves about $29 of a $120 credit as margin. A $20 monthly budget (`dca-bot-monthly`, gross cost, credits not subtracted) shows overspending early |
 | Address | an Elastic IP; the dashboard uses `https://<ip-with-dashes>.sslip.io` (sslip.io resolves it to the IP, so no domain is needed). Set `DCA_DOMAIN=your.domain` and point an A record at the IP to use your own |
 | Builds | GitHub Actions (`.github/workflows/release.yml`) builds the binary and the dashboard on every push to `main` and publishes them as the `rolling` release; the instance only downloads and restarts, it never compiles |
 
