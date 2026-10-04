@@ -54,6 +54,10 @@ if [ "$IID" = "None" ]; then
   echo "launched $IID"
 fi
 aws ec2 wait instance-running --instance-ids "$IID"
+# Let AWS move the instance to healthy hardware if the host fails (best effort: needs CloudWatch access).
+aws cloudwatch put-metric-alarm --alarm-name "$NAME-auto-recover" --namespace AWS/EC2 --metric-name StatusCheckFailed_System \
+  --dimensions Name=InstanceId,Value="$IID" --statistic Maximum --period 60 --evaluation-periods 2 --threshold 0 \
+  --comparison-operator GreaterThanThreshold --alarm-actions "arn:aws:automate:$REGION:ec2:recover" >/dev/null 2>&1 || true
 
 # --- fixed public address ------------------------------------------------------------------------------------
 EIP="$(aws ec2 describe-addresses --filters Name=tag:Name,Values="$NAME" --query 'Addresses[0].AllocationId' --output text)"

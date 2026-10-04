@@ -25,6 +25,10 @@ Afterwards:
 2. Stop the old host (Render) before or right after the first start: two processes with the same token answer every command twice.
 3. `https://<address>/health` should report `"discordStatus":"connected"`. The OCR models (about 100 MB) download in the background on the first start, `"ocr"` turns `ready` after a minute or two.
 
+## Staying up
+
+`systemd` restarts the bot whenever it exits; `dca-health.timer` checks `/health` every minute and restarts the bot when the Discord gateway has not been connected for 5 checks in a row; a CloudWatch alarm (`dca-bot-auto-recover`) lets AWS move the instance to healthy hardware if the host fails; Caddy renews the certificate by itself. State lives in Firebase, so a restart or a rebuilt instance loses nothing.
+
 ## Updating
 
 Push to `main`; when the "Release build" workflow is green:
