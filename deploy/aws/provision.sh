@@ -5,12 +5,12 @@
 #   deploy/aws/provision.sh /path/to/production.env
 #
 # production.env holds the bot's settings (see .env.example). `__DOMAIN__` in it is replaced by the instance's
-# address. Safe to run again: existing resources are reused. Costs about $13/month in us-east-1
+# address. Safe to run again: existing resources are reused. Costs about $14/month in ap-southeast-2
 # (t3.micro + 20 GB disk + public IPv4).
 set -euo pipefail
 
 ENV_FILE="${1:?usage: provision.sh /path/to/production.env}"
-REGION="${AWS_REGION:-us-east-1}"
+REGION="${AWS_REGION:-ap-southeast-2}"
 NAME="${DCA_NAME:-dca-bot}"
 TYPE="${DCA_INSTANCE_TYPE:-t3.micro}"
 KEY="$HOME/.ssh/${NAME}.pem"
@@ -75,7 +75,7 @@ for _ in $(seq 1 120); do "${SSH[@]}" test -f /var/log/dca-bootstrap.done 2>/dev
 TMPENV="$(mktemp)"; trap 'rm -f "$TMPENV"' EXIT
 sed "s/__DOMAIN__/$DOMAIN/g" "$ENV_FILE" > "$TMPENV"
 scp -i "$KEY" -q "$TMPENV" "ubuntu@$IP:/tmp/dca.env"
-"${SSH[@]}" "sudo install -m 640 -o root -g dca /tmp/dca.env /etc/dca/dca.env && rm /tmp/dca.env && sed 's/__DOMAIN__/$DOMAIN/' /etc/dca/Caddyfile.template | sudo tee /etc/caddy/Caddyfile >/dev/null && sudo systemctl enable --now caddy && sudo systemctl reload caddy && sudo dca-update"
+"${SSH[@]}" "sudo install -m 640 -o root -g dca /tmp/dca.env /etc/dca/dca.env && rm /tmp/dca.env && sudo sed 's/__DOMAIN__/$DOMAIN/' /etc/dca/Caddyfile.template | sudo tee /etc/caddy/Caddyfile >/dev/null && sudo systemctl enable --now caddy && sudo systemctl reload caddy && sudo dca-update"
 echo
 echo "Done. Dashboard: https://$DOMAIN/dashboard   health: https://$DOMAIN/health"
 echo "Register this redirect URI in the Discord developer portal: https://$DOMAIN/auth/discord/callback"

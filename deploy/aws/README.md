@@ -4,8 +4,8 @@ One small EC2 instance runs the bot and the dashboard (a single Rust process) be
 
 | | |
 | --- | --- |
-| Region / instance | us-east-1 (closest to Discord's gateway), `t3.micro` (2 vCPU burst, 1 GB) + 2 GB swap, Ubuntu 24.04, 20 GB gp3, standard CPU credits (never billed for bursting) |
-| Cost | about $13 per month (instance $7.6, disk $1.9, public IPv4 $3.7): roughly $80 for six months |
+| Region / instance | ap-southeast-2 (Sydney; override with `AWS_REGION`, e.g. us-east-1 is closest to Discord's gateway), `t3.micro` (2 vCPU burst, 1 GB) + 2 GB swap, Ubuntu 24.04, 20 GB gp3, standard CPU credits (never billed for bursting) |
+| Cost | about $14 per month (instance $7.6, disk $1.9, public IPv4 $3.7): roughly $80 for six months |
 | Address | an Elastic IP; the dashboard uses `https://<ip-with-dashes>.sslip.io` (sslip.io resolves it to the IP, so no domain is needed). Set `DCA_DOMAIN=your.domain` and point an A record at the IP to use your own |
 | Builds | GitHub Actions (`.github/workflows/release.yml`) builds the binary and the dashboard on every push to `main` and publishes them as the `rolling` release; the instance only downloads and restarts, it never compiles |
 
