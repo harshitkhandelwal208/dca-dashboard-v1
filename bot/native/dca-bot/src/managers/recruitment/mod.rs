@@ -256,9 +256,12 @@ pub async fn clean_recruitment_panel_channel(app: &App, config: Option<&Dashboar
             builder = builder.before(b);
         }
         let messages = match channel.messages(&app.http, builder).await {
-            Ok(messages) => messages,
+            Ok(messages) => {
+                sweep_recovered();
+                messages
+            }
             Err(error) => {
-                tracing::warn!("could not read the panel channel {channel} to clean it: {error}");
+                sweep_failed(&format!("could not read the panel channel {channel} to clean it: {error}"));
                 break;
             }
         };
@@ -294,6 +297,24 @@ pub async fn clean_recruitment_panel_channel(app: &App, config: Option<&Dashboar
         }
     }
     deleted
+}
+
+/// The sweep runs every 15 seconds: a problem that persists (say, the bot cannot see the channel) is logged once, and
+/// again when it is over, not on every run.
+static SWEEP_PROBLEM: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn sweep_failed(message: &str) {
+    let mut last = SWEEP_PROBLEM.lock().unwrap();
+    if last.as_deref() != Some(message) {
+        tracing::warn!("{message}");
+        *last = Some(message.to_string());
+    }
+}
+
+fn sweep_recovered() {
+    if SWEEP_PROBLEM.lock().unwrap().take().is_some() {
+        tracing::info!("The Apply channel can be cleaned again.");
+    }
 }
 
 /// Keeps the Apply channel empty apart from the panel: a sweep every 15 seconds, independent of the panel refresh.
