@@ -605,11 +605,16 @@ fn normalize_bot(input: Raw, fb: &BotConfig) -> BotConfig {
         manager_role_id: clean_snowflake(get(raw, "managerRoleId"), &fb.manager_role_id),
         locale: clean_name(get(raw, "locale"), if fb.locale.is_empty() { "en-US" } else { &fb.locale }, 20),
         command_log_channel_id: clean_snowflake(get(raw, "commandLogChannelId"), &fb.command_log_channel_id),
-        dashboard_url: clean_optional_text(
-            get(raw, "dashboardUrl"),
-            &first_non_empty(&[env("DASHBOARD_BASE_URL"), fb.dashboard_url.clone()]),
-            300,
-        ),
+        // The address of this deployment (DASHBOARD_BASE_URL) wins over what an earlier host saved in the stored config,
+        // so /dashboard, /help and the guide links never point at a previous host.
+        dashboard_url: {
+            let deployed = env("DASHBOARD_BASE_URL");
+            if deployed.is_empty() {
+                clean_optional_text(get(raw, "dashboardUrl"), &first_non_empty(&[fb.dashboard_url.clone()]), 300)
+            } else {
+                slice(deployed.trim_end_matches('/'), 300)
+            }
+        },
     }
 }
 

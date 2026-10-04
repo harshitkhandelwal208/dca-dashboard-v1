@@ -29,5 +29,8 @@ RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}/deploy/aws"
 curl -fsSL "$RAW/dca-bot.service" -o /etc/systemd/system/dca-bot.service
 curl -fsSL "$RAW/Caddyfile.template" -o /etc/dca/Caddyfile.template
 curl -fsSL "$RAW/update.sh" -o /usr/local/bin/dca-update && chmod 755 /usr/local/bin/dca-update
+for f in dca-health.service dca-health.timer; do curl -fsSL "$RAW/$f" -o "/etc/systemd/system/$f"; done
+curl -fsSL "$RAW/dca-health.sh" -o /usr/local/bin/dca-health && chmod 755 /usr/local/bin/dca-health
 systemctl daemon-reload
+systemctl enable --now dca-health.timer
 echo "bootstrap done" > /var/log/dca-bootstrap.done

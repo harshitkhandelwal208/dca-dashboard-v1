@@ -86,6 +86,22 @@ async fn register_commands(http: &Http) {
         Ok(registered) => tracing::info!("Registered {} global command(s) (of {count}).", registered.len()),
         Err(error) => tracing::error!("Slash command deployment failed: {error}"),
     }
+    remove_guild_commands(http).await;
+}
+
+/// Commands are global only. A copy registered per server (by an older version of the bot) would show every command
+/// twice in that server, so any guild-scoped commands of this application are removed.
+async fn remove_guild_commands(http: &Http) {
+    let Ok(guilds) = http.get_guilds(None, Some(100)).await else { return };
+    for guild in guilds {
+        match guild.id.get_commands(http).await {
+            Ok(found) if !found.is_empty() => match guild.id.set_commands(http, Vec::new()).await {
+                Ok(_) => tracing::info!("Removed {} duplicate server command(s) from {}.", found.len(), guild.name),
+                Err(error) => tracing::warn!("Could not remove server commands from {}: {error}", guild.name),
+            },
+            _ => {}
+        }
+    }
 }
 
 fn load_env() {

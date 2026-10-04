@@ -15,6 +15,7 @@ async fn main() {
     }
     let config = load_config(&store).await;
     println!("\nconfig version {} | community guild {:?} | recruitment guild {:?}", config.version, config.bot.community_guild_id, config.bot.recruitment_guild_id);
+    println!("dashboard url {:?}", config.bot.dashboard_url);
     println!("recruitment: enabled {} panel channel {:?} log channel {:?} teams {:?}", config.recruitment.enabled, config.recruitment.panel_channel_id, config.recruitment.log_channel_id, config.recruitment.teams);
     println!("member counts: {} teams | reaction roles: {} groups | youtube feeds: {} | spreadsheet teams: {} (enabled {})", config.member_counts.teams.len(), config.reaction_roles.len(), config.youtube.feeds.len(), config.spreadsheets.teams.len(), config.spreadsheets.teams.iter().filter(|t| t.enabled).count());
     let tickets = list_tickets(&store, &TicketFilter::default()).await;

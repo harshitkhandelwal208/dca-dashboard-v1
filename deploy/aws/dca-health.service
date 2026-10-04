@@ -1,0 +1,6 @@
+[Unit]
+Description=DCA bot health check
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/dca-health
