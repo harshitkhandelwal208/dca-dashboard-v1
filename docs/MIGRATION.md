@@ -57,6 +57,6 @@ The reader is tuned for Render's free tier (0.1 CPU, 512 MB): one inference thre
 - Blurred or extremely angled photos may be recognised but not fully read; use the correction commands.
 - Real-world samples beyond the two guide screenshots could not be collected automatically. Drop failing screenshots into `bot/fixtures/samples/` to extend the tests.
 
-## Files that are now obsolete
+## Files from earlier attempts
 
-Nothing was deleted automatically. These untracked leftovers from earlier attempts are not used by the workspace and can be removed: `bot/native/ocrd/`, `bot/native/dca-state/src/{log_store,recruitment_store,reminder_store,spreadsheet_store,warning_store}.rs`, `bot/native/dca-core/build.rs`, `bot/native/dca-core/src/{excel,geometry,pixels,recruitment_vision,reports,review_image,standings_table,team_event_vision,tesseract}.rs`, `bot/native/dca-bot/src/{handlers,schedulers,server}/`, `bot/native/dca-bot/src/commands/recruitment.rs`, the root `Cargo.lock` and `target/`.
+The leftovers of earlier attempts (a Tesseract based reader and its `ocrd` daemon, unused store and vision modules, an extra root workspace, the Render and Docker files, duplicate guides) have been removed from the working tree.

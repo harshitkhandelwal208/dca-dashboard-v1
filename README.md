@@ -22,18 +22,17 @@ Production state lives in Firebase (the same documents the earlier Node bot used
 │   ├── fonts/             Bundled Noto fonts (text + colour emoji) for rendered images and emoji matching
 │   ├── fixtures/guides/   The two guide screenshots (also served by the dashboard)
 │   ├── scripts/download-models.sh
-│   ├── models/            PaddleOCR ONNX models (downloaded, not committed)
-│   └── Dockerfile
+│   └── models/            PaddleOCR ONNX models (downloaded, not committed)
 ├── dashboard/             React app (Vite): src/, public/
-├── docs/                  Guides (HTML) and the migration notes
-└── render.yaml
+├── deploy/aws/            EC2 provisioning, update script, service units, Caddy config
+└── docs/                  Migration notes, performance figures, live-test checklist, team-event guide
 ```
 
 ## Requirements
 
 - A Discord application with a bot user and a bot token with the **Server Members** and **Message Content** privileged intents enabled (the bot requests Guilds, Guild Messages, Guild Members, Reactions, Moderation, Message Content and Direct Messages).
 - A Firebase project with Cloud Firestore or Realtime Database for production state (optional for development).
-- To run from source: Rust (stable, 1.80+) and a C++ toolchain (ONNX Runtime is linked statically), plus Node 18+ only to build the dashboard. Or just use the Docker image, which needs nothing installed.
+- To run from source: Rust (stable, 1.80+) and a C++ toolchain (ONNX Runtime is linked statically), plus Node 18+ only to build the dashboard.
 
 Screenshots (driver licences, team-event standings) are read by **local PaddleOCR (PP-OCRv5 on ONNX Runtime)**: no API keys, no paid services, no outside calls and no quota. See [Screenshot reading](#screenshot-reading-local-paddleocr).
 
@@ -52,8 +51,6 @@ DISCORD_TOKEN=... cargo run --release -p dca-bot
 ```
 
 Everything is read from the environment (a `.env` file in the repository root, `bot/` or the working directory is loaded). Open `http://localhost:3000/dashboard` for the dashboard.
-
-Docker (what Render uses): `docker build -f bot/Dockerfile -t dca-bot .` from the repository root. The image contains the binary, the built dashboard, the fonts and the OCR models.
 
 ### Environment
 
@@ -220,7 +217,7 @@ Without Firebase, scopes are JSON files in `bot/data/` (override with `DCA_DATA_
 
 ## Deployment
 
-Production runs on a single AWS EC2 instance (about $13/month): see [deploy/aws/README.md](deploy/aws/README.md). GitHub Actions builds the bot and the dashboard on every push to `main`; `deploy/aws/provision.sh` creates the instance and `sudo dca-update` on it installs the latest build. A Docker image can be built from `bot/Dockerfile` (`docker build -f bot/Dockerfile -t dca-bot .` from the repository root) for any other host. Use the same Firebase project and credentials as before. Register `https://<your-host>/auth/discord/callback` as the OAuth redirect.
+Production runs on a single AWS EC2 instance (about $15/month): see [deploy/aws/README.md](deploy/aws/README.md). GitHub Actions builds the bot and the dashboard on every push to `main`; `deploy/aws/provision.sh` creates the instance and `sudo dca-update` on it installs the latest build. The same release build runs on any Ubuntu 24.04 host with `deploy/aws/bootstrap.sh` and `update.sh`. Use the same Firebase project and credentials as before. Register `https://<your-host>/auth/discord/callback` as the OAuth redirect.
 
 ## Tests
 
