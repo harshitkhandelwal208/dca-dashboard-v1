@@ -15,14 +15,8 @@ async fn deliver(app: &App, user: UserId, channel: Option<ChannelId>, text: &str
     .await;
     if dm.is_err() {
         if let Some(channel) = channel {
-            let _ = channel
-                .send_message(
-                    &app.http,
-                    CreateMessage::new()
-                        .content(format!("<@{user}> \u{23f0} Reminder: {text}"))
-                        .allowed_mentions(CreateAllowedMentions::new().users(vec![user])),
-                )
-                .await;
+            let _ =
+                channel.send_message(&app.http, CreateMessage::new().content(format!("<@{user}> \u{23f0} Reminder: {text}")).allowed_mentions(CreateAllowedMentions::new().users(vec![user]))).await;
         }
     }
 }

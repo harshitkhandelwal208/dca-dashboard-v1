@@ -32,14 +32,7 @@ struct Candidate {
 
 fn crop_rect(page: &Rgb, bbox: [f32; 4], pad_x: f32, pad_y: f32) -> Rect {
     let h = bbox[3] - bbox[1];
-    Rect::new(
-        (bbox[0] - h * pad_x).floor() as i64,
-        (bbox[1] - h * pad_y).floor() as i64,
-        (bbox[2] - bbox[0] + 2.0 * h * pad_x).ceil() as i64,
-        (h + 2.0 * h * pad_y).ceil() as i64,
-        page.w,
-        page.h,
-    )
+    Rect::new((bbox[0] - h * pad_x).floor() as i64, (bbox[1] - h * pad_y).floor() as i64, (bbox[2] - bbox[0] + 2.0 * h * pad_x).ceil() as i64, (h + 2.0 * h * pad_y).ceil() as i64, page.w, page.h)
 }
 
 /// How plausible a reading is as a player name for the script that produced it.
@@ -66,7 +59,7 @@ fn is_digits_only(text: &str) -> bool {
 
 /// A lone "." or "!" after a name is an emoji the recogniser misread.
 fn strip_trailing_marks(text: &str) -> String {
-    let trimmed = text.trim_end_matches(|c: char| matches!(c, '.' | '!' | ':' | ';' | ',' | '\u{b7}' | ' '));
+    let trimmed = text.trim_end_matches(['.', '!', ':', ';', ',', '\u{b7}', ' ']);
     if trimmed.chars().filter(|c| c.is_alphanumeric()).count() >= 3 {
         trimmed.to_string()
     } else {
@@ -80,7 +73,9 @@ const CYRILLIC_LOOKALIKES: &str = "АВСЕНКМОРТХУаеорсху";
 /// Every letter is one a Cyrillic word could be drawn with ("CaHA", "TOM"), so the Latin reading is suspect.
 fn all_lookalikes(text: &str) -> bool {
     let letters: Vec<char> = text.chars().filter(|c| c.is_alphabetic()).collect();
-    letters.len() >= 3 && letters.iter().filter(|c| "ABCEHKMOPTXYaceopxy".contains(**c)).count() * 10 >= letters.len() * 8 && text.chars().zip(text.chars().skip(1)).any(|(a, b)| a.is_lowercase() && b.is_uppercase())
+    letters.len() >= 3
+        && letters.iter().filter(|c| "ABCEHKMOPTXYaceopxy".contains(**c)).count() * 10 >= letters.len() * 8
+        && text.chars().zip(text.chars().skip(1)).any(|(a, b)| a.is_lowercase() && b.is_uppercase())
 }
 
 /// Confidence from which the page-level reading of a name is trusted (`DCA_NAME_ACCEPT`, 1.0 = always read twice).
@@ -175,7 +170,7 @@ impl NameReader {
                 }
             }
             let score = own[i] + 0.5 * support / (n.max(2) - 1) as f32;
-            if best.map_or(true, |b| score > b.0) {
+            if best.is_none_or(|b| score > b.0) {
                 best = Some((score, i));
             }
         }
@@ -202,11 +197,11 @@ impl NameReader {
         let mut best = self.best(&candidates);
 
         // Not Latin / not convincing: let every other script have a go and keep the one that clearly owns the text.
-        let needs_escalation = best.as_ref().map_or(true, |b| b.conf < 0.85 || b.text.chars().filter(|c| c.is_alphanumeric()).count() < 3 || all_lookalikes(&b.text));
+        let needs_escalation = best.as_ref().is_none_or(|b| b.conf < 0.85 || b.text.chars().filter(|c| c.is_alphanumeric()).count() < 3 || all_lookalikes(&b.text));
         if needs_escalation {
             // Most likely scripts first, stopping at the first convincing reading (each model costs memory and time).
             let mut extra: Vec<Candidate> = Vec::new();
-            let unreadable = best.as_ref().map_or(true, |b| b.conf < 0.6 || b.text.chars().filter(|c| c.is_alphanumeric()).count() < 2);
+            let unreadable = best.as_ref().is_none_or(|b| b.conf < 0.6 || b.text.chars().filter(|c| c.is_alphanumeric()).count() < 2);
             let order: &[Script] = if unreadable { &Script::ESCALATION } else { &Script::ESCALATION[..1] };
             for script in order {
                 let found = self.collect(&[*script], &crops[..1]);
@@ -228,7 +223,7 @@ impl NameReader {
                     continue;
                 }
                 let purity = script_purity(&cand.text, cand.script);
-                if purity >= 0.6 && cand.conf >= 0.6 && winner.as_ref().map_or(true, |w| cand.conf > w.conf + 0.08 || w.conf < 0.5) {
+                if purity >= 0.6 && cand.conf >= 0.6 && winner.as_ref().is_none_or(|w| cand.conf > w.conf + 0.08 || w.conf < 0.5) {
                     winner = Some(cand.clone());
                 }
             }
@@ -239,7 +234,7 @@ impl NameReader {
                 let letters: Vec<char> = cyr.text.chars().filter(|c| c.is_alphabetic()).collect();
                 let cyrillic = letters.iter().filter(|c| Script::Cyrillic.owns(**c)).count();
                 let exclusive = letters.iter().filter(|c| Script::Cyrillic.owns(**c) && !CYRILLIC_LOOKALIKES.contains(**c)).count();
-                let current_is_lookalike = best.as_ref().map_or(true, |b| all_lookalikes(&b.text) || b.conf < cyr.conf);
+                let current_is_lookalike = best.as_ref().is_none_or(|b| all_lookalikes(&b.text) || b.conf < cyr.conf);
                 if cyr.conf >= 0.6 && cyrillic * 10 >= letters.len() * 8 && exclusive >= 1 && current_is_lookalike {
                     best = Some(cyr.clone());
                 }
@@ -279,14 +274,7 @@ impl NameReader {
         // Emoji sit next to (or inside) the text box but are not text, so look a little beyond it.
         let blobs = match &self.emoji {
             Some(index) => {
-                let wide = Rect::new(
-                    (bbox[0] - h * 2.6) as i64,
-                    (bbox[1] - h * 0.25) as i64,
-                    ((bbox[2] - bbox[0]) + h * 4.8) as i64,
-                    (h * 1.5) as i64,
-                    page.w,
-                    page.h,
-                );
+                let wide = Rect::new((bbox[0] - h * 2.6) as i64, (bbox[1] - h * 0.25) as i64, ((bbox[2] - bbox[0]) + h * 4.8) as i64, (h * 1.5) as i64, page.w, page.h);
                 let mut found = index.locate(page, wide);
                 if std::env::var("DCA_OCR_DEBUG").is_ok() {
                     eprintln!("    name bbox {:?} wide {:?} blobs {:?}", bbox, wide, found);
@@ -307,7 +295,7 @@ impl NameReader {
                 found.retain(|b| {
                     let (x0, x1) = (b.x as f32, (b.x + b.w) as f32);
                     // The trophy icon in front of the score is not an emoji of the name.
-                    x1 > bbox[0] - h * 1.5 && x0 < bbox[2] + h * 1.7 && right_limit.map_or(true, |l| ((x0 + x1) / 2.0) < l)
+                    x1 > bbox[0] - h * 1.5 && x0 < bbox[2] + h * 1.7 && right_limit.is_none_or(|l| ((x0 + x1) / 2.0) < l)
                 });
                 found
             }

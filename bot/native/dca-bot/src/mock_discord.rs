@@ -184,7 +184,13 @@ async fn handle(State((inner, next, base)): State<St>, request: Request) -> Resp
     let mut attachments = Vec::new();
     for (name, data) in files {
         let n = alloc();
-        let kind = if name.ends_with(".png") { "image/png" } else if name.ends_with(".xlsx") { "application/octet-stream" } else { "image/jpeg" };
+        let kind = if name.ends_with(".png") {
+            "image/png"
+        } else if name.ends_with(".xlsx") {
+            "application/octet-stream"
+        } else {
+            "image/jpeg"
+        };
         inner.lock().unwrap().files.insert(format!("{n}/{name}"), (data.clone(), kind.to_string()));
         let url = format!("{base}/files/{n}/{name}");
         attachments.push(json!({ "id": n.to_string(), "filename": name, "size": data.len(), "url": url, "proxy_url": url, "content_type": kind }));
@@ -224,7 +230,14 @@ async fn handle(State((inner, next, base)): State<St>, request: Request) -> Resp
             }
         }
         (Method::POST, ["channels", id, "messages"]) => {
-            let message = message_json(alloc(), id, body["content"].as_str().unwrap_or(""), body["embeds"].clone().as_array().map(|_| body["embeds"].clone()).unwrap_or(json!([])), Value::Array(attachments), body["components"].clone().as_array().map(|_| body["components"].clone()).unwrap_or(json!([])));
+            let message = message_json(
+                alloc(),
+                id,
+                body["content"].as_str().unwrap_or(""),
+                body["embeds"].clone().as_array().map(|_| body["embeds"].clone()).unwrap_or(json!([])),
+                Value::Array(attachments),
+                body["components"].clone().as_array().map(|_| body["components"].clone()).unwrap_or(json!([])),
+            );
             inner.lock().unwrap().messages.entry(id.to_string()).or_default().push(message.clone());
             ok(message)
         }
@@ -266,12 +279,21 @@ async fn handle(State((inner, next, base)): State<St>, request: Request) -> Resp
             let _ = id;
             ok(json!([]))
         }
-        (Method::POST, ["channels", _, "invites"]) => ok(json!({ "code": "abc123", "channel": { "id": "1", "name": "welcome", "type": 0 }, "created_at": "2026-10-04T12:00:00.000000+00:00", "max_age": 0, "max_uses": 1, "temporary": false, "uses": 0, "inviter": user_json(&BOT_ID.to_string(), "dcabot", true) })),
+        (Method::POST, ["channels", _, "invites"]) => ok(
+            json!({ "code": "abc123", "channel": { "id": "1", "name": "welcome", "type": 0 }, "created_at": "2026-10-04T12:00:00.000000+00:00", "max_age": 0, "max_uses": 1, "temporary": false, "uses": 0, "inviter": user_json(&BOT_ID.to_string(), "dcabot", true) }),
+        ),
         (Method::PUT, ["channels", ..]) | (Method::DELETE, ["channels", ..]) => no_content(),
         (Method::POST, ["interactions", _, _, "callback"]) => no_content(),
         (Method::PATCH, ["webhooks", _, _, "messages", "@original"]) | (Method::POST, ["webhooks", _, _]) => {
             let channel = "1";
-            let message = message_json(alloc(), channel, body["content"].as_str().unwrap_or(""), body["embeds"].clone().as_array().map(|_| body["embeds"].clone()).unwrap_or(json!([])), Value::Array(attachments), json!([]));
+            let message = message_json(
+                alloc(),
+                channel,
+                body["content"].as_str().unwrap_or(""),
+                body["embeds"].clone().as_array().map(|_| body["embeds"].clone()).unwrap_or(json!([])),
+                Value::Array(attachments),
+                json!([]),
+            );
             inner.lock().unwrap().messages.entry(format!("interaction:{}", route.split('/').nth(2).unwrap_or(""))).or_default().push(message.clone());
             ok(message)
         }
@@ -282,7 +304,9 @@ async fn handle(State((inner, next, base)): State<St>, request: Request) -> Resp
         ], "afk_timeout": 300, "verification_level": 0, "default_message_notifications": 0, "explicit_content_filter": 0, "emojis": [], "stickers": [], "features": [], "mfa_level": 0, "system_channel_flags": 0, "premium_tier": 0, "preferred_locale": "en-US", "nsfw_level": 0, "premium_progress_bar_enabled": false, "approximate_member_count": 42 })),
         (Method::GET, ["guilds", _, "channels"]) => ok(json!([])),
         (Method::GET, ["guilds", _, "bans", _]) => (StatusCode::NOT_FOUND, axum::Json(json!({ "message": "Unknown Ban", "code": 10026 }))).into_response(),
-        (Method::PUT, ["guilds", _, "bans", _]) | (Method::DELETE, ["guilds", _, "bans", _]) | (Method::DELETE, ["guilds", _, "members", _]) | (Method::PATCH, ["guilds", _, "members", _]) => no_content(),
+        (Method::PUT, ["guilds", _, "bans", _]) | (Method::DELETE, ["guilds", _, "bans", _]) | (Method::DELETE, ["guilds", _, "members", _]) | (Method::PATCH, ["guilds", _, "members", _]) => {
+            no_content()
+        }
         (Method::GET, ["guilds", _, "members"]) => {
             let members: Vec<Value> = inner.lock().unwrap().roles.iter().map(|(uid, roles)| json!({ "user": user_json(uid, &format!("user{}", &uid[uid.len().saturating_sub(4)..]), false), "roles": roles, "joined_at": "2026-01-01T00:00:00.000000+00:00", "deaf": false, "mute": false, "flags": 0 })).collect();
             ok(Value::Array(members))
@@ -290,7 +314,9 @@ async fn handle(State((inner, next, base)): State<St>, request: Request) -> Resp
         (Method::GET, ["guilds", id, "members", uid]) => {
             let roles = inner.lock().unwrap().roles.get(*uid).cloned().unwrap_or_default();
             let _ = id;
-            ok(json!({ "user": user_json(uid, &format!("user{}", &uid[uid.len().saturating_sub(4)..]), false), "roles": roles, "joined_at": "2026-01-01T00:00:00.000000+00:00", "deaf": false, "mute": false, "flags": 0 }))
+            ok(
+                json!({ "user": user_json(uid, &format!("user{}", &uid[uid.len().saturating_sub(4)..]), false), "roles": roles, "joined_at": "2026-01-01T00:00:00.000000+00:00", "deaf": false, "mute": false, "flags": 0 }),
+            )
         }
         (Method::PUT, ["guilds", _, "members", uid, "roles", rid]) => {
             inner.lock().unwrap().roles.entry(uid.to_string()).or_default().push(rid.to_string());

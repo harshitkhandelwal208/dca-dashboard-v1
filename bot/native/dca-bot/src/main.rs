@@ -1,20 +1,20 @@
 //! DCA Discord bot + dashboard, one process (the Rust port of `bot/index.js` + `dashboard/server`).
 
 mod app;
-mod commands;
-#[cfg(test)]
-mod e2e_tests;
 #[cfg(test)]
 mod bench_tests;
 #[cfg(test)]
 mod command_tests;
+mod commands;
+#[cfg(test)]
+mod e2e_tests;
+mod events;
 #[cfg(test)]
 mod flow_tests;
-#[cfg(test)]
-mod mock_discord;
-mod events;
 mod logs;
 mod managers;
+#[cfg(test)]
+mod mock_discord;
 mod opts;
 mod responder;
 mod util;

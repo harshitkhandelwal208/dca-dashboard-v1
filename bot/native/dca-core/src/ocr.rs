@@ -28,30 +28,10 @@ pub enum Script {
 }
 
 impl Script {
-    pub const ALL: [Script; 10] = [
-        Script::Multi,
-        Script::Latin,
-        Script::Cyrillic,
-        Script::Arabic,
-        Script::Korean,
-        Script::Thai,
-        Script::Greek,
-        Script::Devanagari,
-        Script::Tamil,
-        Script::Telugu,
-    ];
+    pub const ALL: [Script; 10] = [Script::Multi, Script::Latin, Script::Cyrillic, Script::Arabic, Script::Korean, Script::Thai, Script::Greek, Script::Devanagari, Script::Tamil, Script::Telugu];
 
     /// Scripts tried (after Latin + Multi) when a name does not look Latin/CJK.
-    pub const ESCALATION: [Script; 8] = [
-        Script::Cyrillic,
-        Script::Arabic,
-        Script::Korean,
-        Script::Thai,
-        Script::Greek,
-        Script::Devanagari,
-        Script::Tamil,
-        Script::Telugu,
-    ];
+    pub const ESCALATION: [Script; 8] = [Script::Cyrillic, Script::Arabic, Script::Korean, Script::Thai, Script::Greek, Script::Devanagari, Script::Tamil, Script::Telugu];
 
     pub fn files(self) -> (&'static str, &'static str) {
         match self {
@@ -241,7 +221,11 @@ pub fn crop_quad(img: &RgbImage, quad: &[Pt; 4]) -> RgbImage {
 
 /// ONNX Runtime threads per model: `DCA_OCR_THREADS`, else what the container is allowed to use (a 0.1 CPU host gets 1).
 fn session_config() -> OrtSessionConfig {
-    let threads = std::env::var("DCA_OCR_THREADS").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(4));
+    let threads = std::env::var("DCA_OCR_THREADS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(4));
     OrtSessionConfig::new().with_intra_threads(threads).with_inter_threads(1).with_memory_pattern(false)
 }
 
@@ -401,7 +385,8 @@ impl Ocr {
         let longest = img.width().max(img.height());
         if longest > side {
             let scale = side as f32 / longest as f32;
-            let small = image::imageops::resize(img, ((img.width() as f32 * scale).round() as u32).max(32), ((img.height() as f32 * scale).round() as u32).max(32), image::imageops::FilterType::Triangle);
+            let small =
+                image::imageops::resize(img, ((img.width() as f32 * scale).round() as u32).max(32), ((img.height() as f32 * scale).round() as u32).max(32), image::imageops::FilterType::Triangle);
             let (sx, sy) = (img.width() as f32 / small.width() as f32, img.height() as f32 / small.height() as f32);
             return self.detect_raw(&small).into_iter().map(|q| q.map(|p| Pt { x: p.x * sx, y: p.y * sy })).collect();
         }
@@ -414,14 +399,7 @@ impl Ocr {
             det.predict(vec![img.clone()])
         };
         match result {
-            Ok(result) => result
-                .detections
-                .into_iter()
-                .next()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|d| quad_of(&d.bbox.points))
-                .collect(),
+            Ok(result) => result.detections.into_iter().next().unwrap_or_default().into_iter().filter_map(|d| quad_of(&d.bbox.points)).collect(),
             Err(error) => {
                 tracing::warn!("text detection failed: {error}");
                 Vec::new()
@@ -505,7 +483,16 @@ impl Ocr {
                 let quad = quads[offset + i];
                 let xs = quad.iter().map(|p| p.x);
                 let ys = quad.iter().map(|p| p.y);
-                lines.push(TextLine { quad, x0: xs.clone().fold(f32::MAX, f32::min), x1: xs.fold(f32::MIN, f32::max), y0: ys.clone().fold(f32::MAX, f32::min), y1: ys.fold(f32::MIN, f32::max), text: text.trim().to_string(), confidence, script: Script::Latin });
+                lines.push(TextLine {
+                    quad,
+                    x0: xs.clone().fold(f32::MAX, f32::min),
+                    x1: xs.fold(f32::MIN, f32::max),
+                    y0: ys.clone().fold(f32::MAX, f32::min),
+                    y1: ys.fold(f32::MIN, f32::max),
+                    text: text.trim().to_string(),
+                    confidence,
+                    script: Script::Latin,
+                });
             }
             offset += chunk.len();
         }
@@ -526,7 +513,7 @@ impl Ocr {
         let latin = self.recognise(Script::Latin, crops.clone());
         let t_latin = t1.elapsed();
         // The multilingual model only gets the lines the Latin one is unsure of (half the work on a clean screenshot).
-        let doubtful: Vec<usize> = (0..crops.len()).filter(|&i| latin.get(i).map_or(true, |(t, c)| *c < 0.85 || t.trim().chars().filter(|c| c.is_alphanumeric()).count() < 2)).collect();
+        let doubtful: Vec<usize> = (0..crops.len()).filter(|&i| latin.get(i).is_none_or(|(t, c)| *c < 0.85 || t.trim().chars().filter(|c| c.is_alphanumeric()).count() < 2)).collect();
         let mut multi = vec![(String::new(), 0.0f32); crops.len()];
         for (slot, result) in doubtful.iter().zip(self.recognise(Script::Multi, doubtful.iter().map(|&i| crops[i].clone()).collect())) {
             multi[*slot] = result;

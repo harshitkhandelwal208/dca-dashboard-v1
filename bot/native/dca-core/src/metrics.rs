@@ -108,7 +108,7 @@ pub fn session_kab_map(session: &SpreadsheetSession) -> HashMap<String, u32> {
     let threshold = top_opponent_rank(session);
     let mut map = HashMap::new();
     for p in own_players(session) {
-        let kab = threshold.map_or(false, |t| p.rank > 0 && p.rank < t);
+        let kab = threshold.is_some_and(|t| p.rank > 0 && p.rank < t);
         map.insert(p.player_name.clone(), kab as u32);
     }
     map
@@ -153,9 +153,7 @@ pub fn clean_team_name(value: &str, own_team_name: &str) -> String {
     let own = clean_text(own_team_name, "", 80);
     let own_key = normalize_key(&own);
     let number_tokens = re(r"\b\d+\b", &TOKENS).find_iter(&text).count();
-    let has_score_fragments = (!own_key.is_empty() && normalize_key(&text).contains(&own_key))
-        || re(r"\b\d{1,3}[\s,.]\d{3}\b", &SCORE_FRAG).is_match(&text)
-        || number_tokens >= 2;
+    let has_score_fragments = (!own_key.is_empty() && normalize_key(&text).contains(&own_key)) || re(r"\b\d{1,3}[\s,.]\d{3}\b", &SCORE_FRAG).is_match(&text) || number_tokens >= 2;
 
     if !own.is_empty() {
         if let Ok(r) = Regex::new(&format!(r"(?i)\b{}\b", regex::escape(&own))) {
@@ -165,12 +163,8 @@ pub fn clean_team_name(value: &str, own_team_name: &str) -> String {
     if has_score_fragments {
         text = re(r"\b\d[\d\s,.]*\b", &NUMBERS).replace_all(&text, " ").to_string();
     }
-    let pieces: Vec<String> = re(r"(?i)\bvs\b|,|;|\||/", &SPLIT)
-        .split(&text)
-        .map(|part| clean_text(part, "", 80))
-        .filter(|part| !part.is_empty())
-        .filter(|part| normalize_key(part) != own_key)
-        .collect();
+    let pieces: Vec<String> =
+        re(r"(?i)\bvs\b|,|;|\||/", &SPLIT).split(&text).map(|part| clean_text(part, "", 80)).filter(|part| !part.is_empty()).filter(|part| normalize_key(part) != own_key).collect();
     if let Some(last) = pieces.last() {
         text = last.clone();
     }
@@ -202,10 +196,7 @@ pub fn session_opponent_teams(session: &SpreadsheetSession) -> Vec<String> {
 
     let mut explicit: Vec<String> = Vec::new();
     for team in &session.metadata.teams {
-        let label = clean_team_name(
-            team.get("label").or_else(|| team.get("name")).or_else(|| team.get("teamName")).and_then(|v| v.as_str()).unwrap_or(""),
-            &own_team_name,
-        );
+        let label = clean_team_name(team.get("label").or_else(|| team.get("name")).or_else(|| team.get("teamName")).and_then(|v| v.as_str()).unwrap_or(""), &own_team_name);
         let kind = normalize_team_type(team.get("teamType").or_else(|| team.get("type")).or_else(|| team.get("classification")).and_then(|v| v.as_str()).unwrap_or(""));
         if label.is_empty() {
             continue;
@@ -235,12 +226,5 @@ pub fn session_opponent_teams(session: &SpreadsheetSession) -> Vec<String> {
 }
 
 pub fn team_score_from_metadata(session: &SpreadsheetSession, own: bool) -> i64 {
-    session
-        .metadata
-        .team_scores
-        .as_ref()
-        .and_then(|t| if own { t.own } else { t.opponent })
-        .filter(|v| v.is_finite())
-        .map(|v| v as i64)
-        .unwrap_or(0)
+    session.metadata.team_scores.as_ref().and_then(|t| if own { t.own } else { t.opponent }).filter(|v| v.is_finite()).map(|v| v as i64).unwrap_or(0)
 }

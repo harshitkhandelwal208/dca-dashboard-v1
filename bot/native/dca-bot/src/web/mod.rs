@@ -13,11 +13,7 @@ use std::sync::{Arc, Mutex};
 pub use auth::Web;
 
 pub fn router(app: Arc<App>) -> Router {
-    let web = Arc::new(Web {
-        app,
-        secret: auth::session_secret(),
-        sessions: Mutex::new(Default::default()),
-    });
+    let web = Arc::new(Web { app, secret: auth::session_secret(), sessions: Mutex::new(Default::default()) });
     Router::new()
         .route("/", get(routes::root))
         .route("/health", get(routes::health))
@@ -35,10 +31,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/dashboard/tickets", get(routes::tickets))
         .route("/api/dashboard/tickets/{thread_id}/transcript", get(routes::transcript))
         .route("/api/dashboard/logs", get(routes::logs))
-        .route(
-            "/api/dashboard/recruitment/tutorials/{id}/upload",
-            post(routes::upload_tutorial).layer(axum::extract::DefaultBodyLimit::max(routes::upload_limit())),
-        )
+        .route("/api/dashboard/recruitment/tutorials/{id}/upload", post(routes::upload_tutorial).layer(axum::extract::DefaultBodyLimit::max(routes::upload_limit())))
         .route("/dashboard", get(routes::index))
         .route("/dashboard/", get(routes::index))
         .route("/dashboard/{*path}", get(routes::dashboard_file))

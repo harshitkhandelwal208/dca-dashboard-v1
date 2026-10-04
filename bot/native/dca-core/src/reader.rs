@@ -92,7 +92,13 @@ impl Reader {
         if std::env::var("DCA_OCR_DEBUG").is_ok() {
             let detail = analysis.standings.as_ref().map(|p| {
                 let n = p.rows.len().max(1) as f32;
-                format!("rows {} ranked {:.2} named {:.2} scored {:.2}", p.rows.len(), p.rows.iter().filter(|r| r.rank_read).count() as f32 / n, p.rows.iter().filter(|r| !r.name.is_empty()).count() as f32 / n, p.rows.iter().filter(|r| r.score.is_some()).count() as f32 / n)
+                format!(
+                    "rows {} ranked {:.2} named {:.2} scored {:.2}",
+                    p.rows.len(),
+                    p.rows.iter().filter(|r| r.rank_read).count() as f32 / n,
+                    p.rows.iter().filter(|r| !r.name.is_empty()).count() as f32 / n,
+                    p.rows.iter().filter(|r| r.score.is_some()).count() as f32 / n
+                )
             });
             eprintln!("  attempt {method}: {:?} evidence {} good {} {}", analysis.kind, analysis.evidence, Self::good(&analysis), detail.unwrap_or_default());
         }
@@ -103,14 +109,14 @@ impl Reader {
     fn good(a: &Analysis) -> bool {
         match a.kind {
             ScreenKind::DriverLicence => a.licence.anchors >= 3 && a.licence.garage_power.is_some() && !a.licence.name.is_empty(),
-            ScreenKind::Standings => a.standings.as_ref().map_or(false, |p| {
+            ScreenKind::Standings => a.standings.as_ref().is_some_and(|p| {
                 let n = p.rows.len().max(1) as f32;
                 let ranked = p.rows.iter().filter(|r| r.rank_read).count() as f32 / n;
                 let named = p.rows.iter().filter(|r| !r.name.is_empty()).count() as f32 / n;
                 let scored = p.rows.iter().filter(|r| r.score.is_some()).count() as f32 / n;
                 p.rows.len() >= 3 && ranked >= 0.5 && named >= 0.9 && scored >= 0.9
             }),
-            ScreenKind::Podium => a.standings.as_ref().map_or(false, |p| p.rows.len() >= 3),
+            ScreenKind::Podium => a.standings.as_ref().is_some_and(|p| p.rows.len() >= 3),
             ScreenKind::Unknown => false,
         }
     }

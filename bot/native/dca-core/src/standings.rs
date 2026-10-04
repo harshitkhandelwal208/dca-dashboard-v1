@@ -85,7 +85,7 @@ pub fn is_numeric_token(text: &str) -> bool {
     digits >= 1 && others == 0
 }
 
-fn median(values: &mut Vec<f32>) -> f32 {
+fn median(values: &mut [f32]) -> f32 {
     if values.is_empty() {
         return 0.0;
     }
@@ -184,7 +184,6 @@ struct Tokens<'a> {
 /// Rows found in an OCR line list: `(score_line, row_lines)`.
 struct RowGroup {
     score: usize,
-    members: Vec<usize>,
     cy: f32,
     pitch: f32,
 }
@@ -206,11 +205,7 @@ fn find_rows(lines: &[TextLine]) -> (Vec<RowGroup>, f32) {
     let typical_h = median(&mut heights).max(8.0);
     let mut best: Vec<usize> = Vec::new();
     for &anchor in &candidates {
-        let group: Vec<usize> = candidates
-            .iter()
-            .copied()
-            .filter(|&i| (lines[i].x1 - lines[anchor].x1).abs() <= typical_h * 1.6)
-            .collect();
+        let group: Vec<usize> = candidates.iter().copied().filter(|&i| (lines[i].x1 - lines[anchor].x1).abs() <= typical_h * 1.6).collect();
         if group.len() > best.len() {
             best = group;
         }
@@ -236,7 +231,7 @@ fn find_rows(lines: &[TextLine]) -> (Vec<RowGroup>, f32) {
     // Drop score-column members that do not sit on the row grid (e.g. a stray number in the same column).
     let mut rows: Vec<RowGroup> = Vec::new();
     for &i in &best {
-        rows.push(RowGroup { score: i, members: Vec::new(), cy: lines[i].cy(), pitch });
+        rows.push(RowGroup { score: i, cy: lines[i].cy(), pitch });
     }
     (rows, pitch)
 }
@@ -278,7 +273,7 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
             .filter_map(|g| {
                 lines
                     .iter()
-                    .filter(|l| (l.cy() - g.cy).abs() <= g.pitch * 0.4 && l.x1 < lines[g.score].x0 && numeric_value(&l.text).map_or(false, |v| (1..=500).contains(&v)) && l.text.trim().ends_with('.'))
+                    .filter(|l| (l.cy() - g.cy).abs() <= g.pitch * 0.4 && l.x1 < lines[g.score].x0 && numeric_value(&l.text).is_some_and(|v| (1..=500).contains(&v)) && l.text.trim().ends_with('.'))
                     .map(|l| l.x1)
                     .fold(None, |a: Option<f32>, x| Some(a.map_or(x, |m| m.max(x))))
             })
@@ -291,7 +286,11 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
     };
     // The rank column: where the dotted numbers ("12.") end, row after row.
     let rank_col_x1: Option<f32> = {
-        let mut xs: Vec<f32> = lines.iter().filter(|l| l.text.trim().ends_with('.') && is_numeric_token(&l.text) && l.confidence >= 0.6 && rows.iter().any(|g| (l.cy() - g.cy).abs() <= g.pitch * 0.4)).map(|l| l.x1).collect();
+        let mut xs: Vec<f32> = lines
+            .iter()
+            .filter(|l| l.text.trim().ends_with('.') && is_numeric_token(&l.text) && l.confidence >= 0.6 && rows.iter().any(|g| (l.cy() - g.cy).abs() <= g.pitch * 0.4))
+            .map(|l| l.x1)
+            .collect();
         if xs.len() >= 3 {
             Some(median(&mut xs))
         } else {
@@ -377,7 +376,7 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
                 continue;
             }
             let l = &tokens.lines[i];
-            let in_zone = flag_right.map_or(false, |f| l.x0 >= f - pitch * 0.15 && l.x1 <= score_line.x0 - group.pitch * 1.3 + pitch * 0.2);
+            let in_zone = flag_right.is_some_and(|f| l.x0 >= f - pitch * 0.15 && l.x1 <= score_line.x0 - group.pitch * 1.3 + pitch * 0.2);
             if (in_zone || (l.x0 >= name_from_x && l.x0 >= main_line.x1 - main_line.h() * 0.2)) && l.text.chars().any(|c| c.is_alphanumeric()) && l.confidence >= 0.5 {
                 name_lines.push(i);
             }
@@ -416,13 +415,7 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
 
         // Band colour from the strip this row occupies.
         let left_edge = members.iter().map(|&i| tokens.lines[i].x0).fold(f32::MAX, f32::min);
-        let (yellow, blue) = band_votes(
-            &page,
-            left_edge,
-            group.cy - group.pitch * 0.40,
-            score_line.x1 + score_line.h() * 0.5,
-            group.cy + group.pitch * 0.40,
-        );
+        let (yellow, blue) = band_votes(&page, left_edge, group.cy - group.pitch * 0.40, score_line.x1 + score_line.h() * 0.5, group.cy + group.pitch * 0.40);
         let total = (yellow + blue).max(1) as f32;
         let (band, band_conf) = if yellow == 0 && blue == 0 {
             (BAND_NONE, 0.0)
@@ -444,12 +437,7 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
             band_confidence: band_conf,
             gold_text: read.gold,
             cy: group.cy,
-            raw: format!(
-                "{} | {} | {}",
-                members.iter().map(|&i| tokens.lines[i].text.clone()).collect::<Vec<_>>().join(" "),
-                read.text,
-                score_line.text
-            ),
+            raw: format!("{} | {} | {}", members.iter().map(|&i| tokens.lines[i].text.clone()).collect::<Vec<_>>().join(" "), read.text, score_line.text),
         });
     }
 
@@ -467,13 +455,7 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
     let cut = banner_line.map(|l| l.y0).unwrap_or(first_cy - pitch * 0.9);
     let header = read_header(&lines, cut);
     let banner = banner_line.is_some();
-    Ok(StandingsPage {
-        rows: out_rows,
-        header,
-        raw_text: lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n"),
-        has_final_standings_banner: banner,
-        deskew_degrees: deskew,
-    })
+    Ok(StandingsPage { rows: out_rows, header, raw_text: lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n"), has_final_standings_banner: banner, deskew_degrees: deskew })
 }
 
 /// Rotate an image by `degrees` (counter-clockwise positive) on a black canvas of the same size.
@@ -481,7 +463,7 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
 /// ("3001." is badge 300 + rank 1), so every plausible suffix is an option, longest first.
 fn rank_options(text: &str) -> Vec<u32> {
     let t = text.trim();
-    let group: String = t.split(|c: char| !c.is_ascii_digit()).filter(|g| !g.is_empty()).last().unwrap_or("").to_string();
+    let group: String = t.split(|c: char| !c.is_ascii_digit()).rfind(|g| !g.is_empty()).unwrap_or("").to_string();
     let mut out: Vec<u32> = Vec::new();
     for len in (1..=group.len().min(3)).rev() {
         if let Ok(v) = group[group.len() - len..].parse::<u32>() {
@@ -573,7 +555,7 @@ fn fill_missing_rows(ocr: &Ocr, page: &Rgb, lines: &mut Vec<TextLine>, rows: &mu
         let digits = text.chars().filter(|c| c.is_ascii_digit()).count();
         if confidence >= 0.5 && is_numeric_token(&text) && (3..=7).contains(&digits) {
             lines.push(TextLine { quad, x0: left, y0: top, x1: right, y1: bottom, text, confidence, script: Script::Latin });
-            rows.push(RowGroup { score: lines.len() - 1, members: Vec::new(), cy, pitch });
+            rows.push(RowGroup { score: lines.len() - 1, cy, pitch });
         }
     }
     rows.sort_by(|a, b| a.cy.partial_cmp(&b.cy).unwrap());
@@ -618,8 +600,7 @@ fn repair_ranks(mut rows: Vec<StandingsRow>, pitch: f32) -> Vec<StandingsRow> {
     let mut kept: Vec<StandingsRow> = Vec::with_capacity(rows.len());
     let mut repeats: Vec<f32> = Vec::new();
     for row in rows.drain(..) {
-        let repeat = row.score.map_or(false, |s| s >= 1000)
-            && kept.iter().any(|k| k.score == row.score && (norm(&k.name) == norm(&row.name) || edit_distance(&norm(&k.name), &norm(&row.name)) <= 2));
+        let repeat = row.score.is_some_and(|s| s >= 1000) && kept.iter().any(|k| k.score == row.score && (norm(&k.name) == norm(&row.name) || edit_distance(&norm(&k.name), &norm(&row.name)) <= 2));
         if repeat {
             repeats.push(row.cy);
         } else {
@@ -631,10 +612,8 @@ fn repair_ranks(mut rows: Vec<StandingsRow>, pitch: f32) -> Vec<StandingsRow> {
     // Position on the row grid (a row the detector lost leaves a hole, not a shifted list).
     let first_cy = rows[0].cy;
     // ...minus the slots taken by repeated rows, which are not part of the ranking.
-    let grid: Vec<i64> = rows
-        .iter()
-        .map(|r| if pitch > 0.0 { ((r.cy - first_cy) / pitch).round() as i64 - repeats.iter().filter(|c| **c < r.cy && **c > first_cy).count() as i64 } else { 0 })
-        .collect();
+    let grid: Vec<i64> =
+        rows.iter().map(|r| if pitch > 0.0 { ((r.cy - first_cy) / pitch).round() as i64 - repeats.iter().filter(|c| **c < r.cy && **c > first_cy).count() as i64 } else { 0 }).collect();
     use std::collections::HashMap;
     let mut offsets: HashMap<i64, u32> = HashMap::new();
     for (i, row) in rows.iter().enumerate() {
@@ -705,10 +684,8 @@ pub fn clean_team_label(raw: &str, known: &[String]) -> String {
             continue;
         }
         let k_trim = k.trim_end_matches("tm").to_string();
-        if key == k || key == k_trim || (key.starts_with(&k_trim) && key.len() <= k.len() + 2 && !k_trim.is_empty()) {
-            if best.map_or(true, |(_, len)| k.len() > len) {
-                best = Some((team, k.len()));
-            }
+        if (key == k || key == k_trim || (key.starts_with(&k_trim) && key.len() <= k.len() + 2 && !k_trim.is_empty())) && best.is_none_or(|(_, len)| k.len() > len) {
+            best = Some((team, k.len()));
         }
     }
     if let Some((team, _)) = best {
@@ -717,7 +694,7 @@ pub fn clean_team_label(raw: &str, known: &[String]) -> String {
     let mut cleaned = text.replace("\u{2122}M", "\u{2122}").replace("\u{2122}m", "\u{2122}");
     for suffix in ["TM", "Tm", "tm"] {
         if let Some(stripped) = cleaned.strip_suffix(suffix) {
-            if stripped.chars().last().map_or(false, |c| c.is_ascii_digit()) {
+            if stripped.chars().last().is_some_and(|c| c.is_ascii_digit()) {
                 cleaned = format!("{stripped}\u{2122}");
             }
         }
@@ -727,20 +704,13 @@ pub fn clean_team_label(raw: &str, known: &[String]) -> String {
 
 fn read_header(lines: &[TextLine], cut_y: f32) -> StandingsHeader {
     let mut header = StandingsHeader::default();
-    let above: Vec<&TextLine> = lines
-        .iter()
-        .filter(|l| l.cy() < cut_y && !l.text.trim().is_empty() && l.confidence >= 0.3)
-        .collect();
+    let above: Vec<&TextLine> = lines.iter().filter(|l| l.cy() < cut_y && !l.text.trim().is_empty() && l.confidence >= 0.3).collect();
     if above.is_empty() {
         return header;
     }
 
     // Candidate title / team-name lines: real words, not the currency counters or UI glyphs.
-    let mut words: Vec<&TextLine> = above
-        .iter()
-        .copied()
-        .filter(|l| l.confidence >= 0.5 && l.text.chars().filter(|c| c.is_alphabetic()).count() >= 3 && norm(&l.text) != "vs")
-        .collect();
+    let mut words: Vec<&TextLine> = above.iter().copied().filter(|l| l.confidence >= 0.5 && l.text.chars().filter(|c| c.is_alphabetic()).count() >= 3 && norm(&l.text) != "vs").collect();
     words.sort_by(|a, b| a.cy().partial_cmp(&b.cy()).unwrap());
     if words.is_empty() {
         return header;
@@ -756,13 +726,7 @@ fn read_header(lines: &[TextLine], cut_y: f32) -> StandingsHeader {
     }
 
     let vs = above.iter().find(|l| norm(&l.text) == "vs");
-    let (title_group, team_group) = if groups.len() >= 2 && groups[0].len() == 1 {
-        (Some(&groups[0]), Some(&groups[1]))
-    } else if groups.len() >= 2 && groups[1].len() >= 2 {
-        (Some(&groups[0]), Some(&groups[1]))
-    } else {
-        (None, groups.first())
-    };
+    let (title_group, team_group) = if groups.len() >= 2 && (groups[0].len() == 1 || groups[1].len() >= 2) { (Some(&groups[0]), Some(&groups[1])) } else { (None, groups.first()) };
 
     if let Some(group) = title_group {
         // Only a single line counts as the title.
@@ -770,7 +734,7 @@ fn read_header(lines: &[TextLine], cut_y: f32) -> StandingsHeader {
             header.title = respace_title(&group[0].text);
         }
     }
-    let mut team_lines: Vec<&TextLine> = team_group.map(|g| g.clone()).unwrap_or_default();
+    let mut team_lines: Vec<&TextLine> = team_group.cloned().unwrap_or_default();
     team_lines.sort_by(|a, b| a.cx().partial_cmp(&b.cx()).unwrap());
     let (left, right) = match (vs, team_lines.len()) {
         (Some(vs), n) if n >= 2 => (
@@ -813,7 +777,6 @@ pub fn looks_like_standings(lines: &[TextLine]) -> bool {
 pub fn find_rows_count(lines: &[TextLine]) -> usize {
     find_rows(lines).0.len()
 }
-
 
 // ------------------------------------------------------------------------------------------------ podium
 
@@ -906,7 +869,11 @@ pub fn read_podium(names: &NameReader, page: &Rgb, lines: &[TextLine]) -> Option
         let left_side = name_line.cx() < w * 0.5;
         let total = (yellow + blue).max(1) as f32;
         let (band, conf) = if yellow + blue >= 20 && (yellow as f32 / total > 0.7 || blue as f32 / total > 0.7) {
-            if yellow > blue { (BAND_YELLOW, yellow as f32 / total) } else { (BAND_BLUE, blue as f32 / total) }
+            if yellow > blue {
+                (BAND_YELLOW, yellow as f32 / total)
+            } else {
+                (BAND_BLUE, blue as f32 / total)
+            }
         } else if left_side {
             (BAND_YELLOW, 0.6)
         } else {
@@ -927,15 +894,8 @@ pub fn read_podium(names: &NameReader, page: &Rgb, lines: &[TextLine]) -> Option
             raw: format!("podium {} {}", rank, read.text),
         });
     }
-    Some(StandingsPage {
-        rows,
-        header,
-        raw_text: lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n"),
-        has_final_standings_banner: false,
-        deskew_degrees: 0.0,
-    })
+    Some(StandingsPage { rows, header, raw_text: lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n"), has_final_standings_banner: false, deskew_degrees: 0.0 })
 }
-
 
 /// Cheap structural test for the result screen: rank-and-name pairs near the top, team scores, or its markers.
 pub fn looks_like_podium(lines: &[TextLine], page_w: f32, page_h: f32) -> bool {
@@ -944,14 +904,19 @@ pub fn looks_like_podium(lines: &[TextLine], page_w: f32, page_h: f32) -> bool {
         .iter()
         .filter(|l| {
             let t = l.text.trim().trim_end_matches('.').trim();
-            !t.is_empty() && t.len() <= 3 && t.chars().all(|c| c.is_ascii_digit()) && l.confidence >= 0.3 && l.cy() < page_h * 0.6 && t.parse::<u32>().map_or(false, |v| (1..=100).contains(&v))
+            !t.is_empty() && t.len() <= 3 && t.chars().all(|c| c.is_ascii_digit()) && l.confidence >= 0.3 && l.cy() < page_h * 0.6 && t.parse::<u32>().is_ok_and(|v| (1..=100).contains(&v))
         })
         .collect();
     let pairs = rank_lines
         .iter()
         .filter(|r| {
             lines.iter().any(|n| {
-                n.x0 >= r.x1 - r.h() * 0.3 && n.x0 - r.x1 <= r.h() * 4.5 && (n.cy() - r.cy()).abs() <= r.h() * 0.6 && n.confidence >= 0.4 && n.text.chars().any(|c| c.is_alphabetic()) && !is_numeric_token(&n.text)
+                n.x0 >= r.x1 - r.h() * 0.3
+                    && n.x0 - r.x1 <= r.h() * 4.5
+                    && (n.cy() - r.cy()).abs() <= r.h() * 0.6
+                    && n.confidence >= 0.4
+                    && n.text.chars().any(|c| c.is_alphabetic())
+                    && !is_numeric_token(&n.text)
             })
         })
         .count();

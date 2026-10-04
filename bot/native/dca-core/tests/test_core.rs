@@ -183,7 +183,24 @@ fn summarize_matches_the_old_bot() {
             let players: Vec<dca_state::models::Player> = serde_json::from_value(session["players"].clone()).unwrap();
             let ours = serde_json::to_value(dca_core::session::summarize(&players)).unwrap();
             let theirs = &session["stats"];
-            for key in ["totalPlayers", "ownPlayers", "opponents", "ownAverageRank", "opponentAverageRank", "ownPoints", "opponentPoints", "ownScore", "opponentScore", "ownTop10", "opponentTop10", "topOpponentRank", "kabCount", "kabPlayers", "buckets", "opponentsBelowByPlayer"] {
+            for key in [
+                "totalPlayers",
+                "ownPlayers",
+                "opponents",
+                "ownAverageRank",
+                "opponentAverageRank",
+                "ownPoints",
+                "opponentPoints",
+                "ownScore",
+                "opponentScore",
+                "ownTop10",
+                "opponentTop10",
+                "topOpponentRank",
+                "kabCount",
+                "kabPlayers",
+                "buckets",
+                "opponentsBelowByPlayer",
+            ] {
                 if let (Some(a), Some(b)) = (ours[key].as_f64(), theirs[key].as_f64()) {
                     assert!((a - b).abs() < 1e-9, "{key}: {a} vs {b}");
                 } else {

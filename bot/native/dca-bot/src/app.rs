@@ -40,7 +40,8 @@ impl Dirs {
             fonts: env("DCA_FONTS_DIR").unwrap_or_else(|| first_existing(&["fonts", "bot/fonts", "../fonts", "../../fonts", "/app/fonts"], "fonts")),
             models: env("DCA_MODELS_DIR").unwrap_or_else(|| first_existing(&["models", "bot/models", "../models", "../../models", "/app/models"], "models")),
             assets: env("DCA_ASSETS_DIR").unwrap_or_else(|| first_existing(&["assets", "bot/assets", "../assets", "../../assets", "/app/assets"], "assets")),
-            dashboard: env("DASHBOARD_DIST_DIR").unwrap_or_else(|| first_existing(&["dashboard/dist", "../dashboard/dist", "../../dashboard/dist", "../../../dashboard/dist", "/app/dashboard"], "dashboard/dist")),
+            dashboard: env("DASHBOARD_DIST_DIR")
+                .unwrap_or_else(|| first_existing(&["dashboard/dist", "../dashboard/dist", "../../dashboard/dist", "../../../dashboard/dist", "/app/dashboard"], "dashboard/dist")),
         }
     }
 }
@@ -58,8 +59,10 @@ pub struct ApplySession {
     pub events: Vec<dca_state::models::Attachment>,
     /// Some screenshot could not be checked in time and was accepted on trust (recruiters are told).
     pub unverified: bool,
-    pub started: Instant,
 }
+
+/// Per guild: when it was fetched, the guild owner and the guild's roles.
+pub type RolesCache = HashMap<GuildId, (Instant, UserId, HashMap<RoleId, Role>)>;
 
 pub struct App {
     pub http: Arc<Http>,
@@ -78,7 +81,7 @@ pub struct App {
     pub quick_secs: std::sync::atomic::AtomicU64,
     pub renderer: Arc<Renderer>,
     pub web: reqwest::Client,
-    pub roles_cache: Mutex<HashMap<GuildId, (Instant, UserId, HashMap<RoleId, Role>)>>,
+    pub roles_cache: Mutex<RolesCache>,
     pub collectors: Mutex<HashMap<(ChannelId, UserId), mpsc::UnboundedSender<Message>>>,
     pub apply_sessions: Mutex<HashMap<String, ApplySession>>,
     pub button_locks: Mutex<HashSet<String>>,

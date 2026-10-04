@@ -172,8 +172,7 @@ fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
 }
 
 pub fn is_secure(headers: &HeaderMap) -> bool {
-    header_str(headers, "x-forwarded-proto").split(',').next().unwrap_or("").trim() == "https"
-        || std::env::var("DASHBOARD_BASE_URL").map(|v| v.starts_with("https://")).unwrap_or(false)
+    header_str(headers, "x-forwarded-proto").split(',').next().unwrap_or("").trim() == "https" || std::env::var("DASHBOARD_BASE_URL").map(|v| v.starts_with("https://")).unwrap_or(false)
 }
 
 /// The public origin of this server (used for the OAuth redirect and uploaded file links).
@@ -227,11 +226,7 @@ pub fn configured_guild_ids(config: Option<&DashboardConfig>) -> Vec<String> {
 }
 
 fn allowed_role_from_env() -> String {
-    ["DASHBOARD_ALLOWED_ROLE_ID", "DISCORD_DASHBOARD_ROLE_ID", "DASHBOARD_ROLE_ID"]
-        .iter()
-        .filter_map(|k| std::env::var(k).ok())
-        .find(|v| !v.is_empty())
-        .unwrap_or_default()
+    ["DASHBOARD_ALLOWED_ROLE_ID", "DISCORD_DASHBOARD_ROLE_ID", "DASHBOARD_ROLE_ID"].iter().filter_map(|k| std::env::var(k).ok()).find(|v| !v.is_empty()).unwrap_or_default()
 }
 
 pub fn allowed_role_id(config: &DashboardConfig) -> String {
@@ -357,17 +352,17 @@ fn json_error(status: StatusCode, message: &str) -> Response {
 }
 
 /// `requireDashboardAuth`: a signed-in session that still holds the allowed role.
-pub async fn require(web: &Arc<Web>, headers: &HeaderMap) -> Result<SessionUser, Response> {
+pub async fn require(web: &Arc<Web>, headers: &HeaderMap) -> Result<SessionUser, Box<Response>> {
     let Some((id, session)) = web.session(headers) else {
-        return Err(json_error(StatusCode::UNAUTHORIZED, "Discord sign in required."));
+        return Err(Box::new(json_error(StatusCode::UNAUTHORIZED, "Discord sign in required.")));
     };
     match session_still_has_role(web, &id, &session).await {
         Some(true) => Ok(session.user),
         Some(false) => {
             web.destroy_session(headers);
-            Err(with_cookies(json_error(StatusCode::FORBIDDEN, "Required Discord role is missing."), vec![set_cookie(headers, SESSION_COOKIE, "", 0)]))
+            Err(Box::new(with_cookies(json_error(StatusCode::FORBIDDEN, "Required Discord role is missing."), vec![set_cookie(headers, SESSION_COOKIE, "", 0)])))
         }
-        None => Err(json_error(StatusCode::SERVICE_UNAVAILABLE, "Could not verify Discord role right now.")),
+        None => Err(Box::new(json_error(StatusCode::SERVICE_UNAVAILABLE, "Could not verify Discord role right now."))),
     }
 }
 
@@ -434,7 +429,11 @@ async fn oauth_json(request: reqwest::RequestBuilder) -> Result<Value, (u16, Str
     let text = response.text().await.unwrap_or_default();
     let data: Value = serde_json::from_str(&text).unwrap_or_else(|_| json!({ "message": text }));
     if !status.is_success() {
-        let message = ["error_description", "error", "message"].iter().find_map(|k| data.get(*k).and_then(Value::as_str)).map(str::to_string).unwrap_or_else(|| format!("Discord API returned {}", status.as_u16()));
+        let message = ["error_description", "error", "message"]
+            .iter()
+            .find_map(|k| data.get(*k).and_then(Value::as_str))
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("Discord API returned {}", status.as_u16()));
         return Err((status.as_u16(), message));
     }
     Ok(data)

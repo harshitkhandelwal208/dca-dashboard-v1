@@ -140,7 +140,7 @@ pub async fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
 }
 
 pub fn responder(rig: &Rig, click: ComponentInteraction) -> Responder {
-    Responder::new(rig.app.http.clone(), Ix::Comp(click))
+    Responder::new(rig.app.http.clone(), Ix::Comp(Box::new(click)))
 }
 
 pub fn body_text(call: &crate::mock_discord::Call) -> String {
@@ -243,6 +243,46 @@ async fn a_licence_and_event_screenshots_in_one_message_create_the_ticket_automa
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_ban_list_can_live_in_the_community_server_but_not_in_a_stranger_one() {
+    let rig = Rig::new("banlist", false).await;
+    let list_channel = rig.mock.next_id();
+    rig.mock.register_channel(list_channel, 0, "ban-list");
+    let community = GUILD_ID.to_string();
+    // The recruitment server is another one; the channel is in the community server.
+    update_config(&rig.app.store, |c| {
+        c.bot.recruitment_guild_id = "700000000000000001".into();
+        c.bot.community_guild_id = community.clone();
+        c.recruitment.ban_list_channel_id = list_channel.to_string();
+    })
+    .await
+    .unwrap();
+    let synced = crate::managers::ban_panel::sync_recruitment_ban_list(&rig.app, false).await;
+    assert!(!synced.skipped, "{}", synced.reason);
+    assert!(!rig.mock.messages_in(list_channel).is_empty(), "the list was posted");
+
+    update_config(&rig.app.store, |c| c.bot.community_guild_id = "700000000000000002".into()).await.unwrap();
+    let synced = crate::managers::ban_panel::sync_recruitment_ban_list(&rig.app, false).await;
+    assert!(synced.skipped, "a channel in an unrelated server is still refused");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_ticket_is_still_created_when_members_cannot_be_added() {
+    if !models_ready() {
+        eprintln!("skipping: PaddleOCR models not downloaded");
+        return;
+    }
+    let rig = Rig::new("apply-no-members", true).await;
+    rig.mock.fail("thread-members", 403);
+    let task = start_apply(&rig).await;
+    let licence = rig.image("fixtures/guides/driver-license.jpg");
+    let event = rig.image("fixtures/guides/team-event-score.jpg");
+    upload(&rig, &[("driver-license.jpg", licence), ("team-event-score.jpg", event)]).await;
+    task.await.unwrap();
+    assert_eq!(list_tickets(&rig.app.store, &TicketFilter::default()).await.len(), 1, "the ticket exists although nobody could be added");
+    assert!(followups(&rig).iter().any(|b| b.contains("Your application ticket has been created")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_apply_channel_is_swept_of_everything_but_the_panel() {
     let rig = Rig::new("sweep", false).await;
     let channel = ChannelId::new(PANEL);
@@ -302,7 +342,7 @@ async fn a_screenshot_that_is_not_the_game_gets_the_guide_and_another_try() {
 
     let task = start_apply(&rig).await;
     upload(&rig, &[("gradient.png", junk)]).await;
-    wait_for("the guide", || followups(&rig).iter().any(|b| b.contains("Correct driver")) ).await;
+    wait_for("the guide", || followups(&rig).iter().any(|b| b.contains("Correct driver"))).await;
     assert!(followups(&rig).iter().any(|b| b.contains("Attempt 1/")), "{:?}", followups(&rig));
     assert!(list_tickets(&rig.app.store, &TicketFilter::default()).await.is_empty(), "no ticket for a wrong image");
 
@@ -501,6 +541,40 @@ async fn five_screenshots_of_one_event_become_one_correct_spreadsheet_session() 
     assert!(posts[0]["content"].as_str().unwrap().contains("Double-time Dilemma"), "{}", posts[0]["content"]);
 }
 
+/// Writes what the bot produces for the five sample screenshots (XLSX, spreadsheet image, chart, weekly report) into
+/// `$DCA_SAMPLE_OUT`, so the outputs can be looked at. `cargo test --release export_sample_outputs -- --ignored`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn export_sample_outputs() {
+    assert!(models_ready(), "the PaddleOCR models are needed");
+    let out = PathBuf::from(std::env::var("DCA_SAMPLE_OUT").expect("set DCA_SAMPLE_OUT to the folder to write into"));
+    std::fs::create_dir_all(&out).unwrap();
+    let rig = sheet_rig("sheet-export").await;
+    submit_pages(&rig, &[0, 1, 2, 3, 4]).await;
+    let sessions = dca_state::stores::list_sessions(&rig.app.store, &Default::default()).await;
+    crate::managers::spreadsheet::process_and_post(&rig.app, &sessions[0].id, &SHEET_CHANNEL.to_string()).await;
+    let session = dca_state::stores::get_session(&rig.app.store, &sessions[0].id).await.unwrap();
+    // The bot removes its images after posting them, so the outputs are built again for the export.
+    let config = rig.app.config().await;
+    let outputs = crate::managers::spreadsheet::rebuild_artifacts(&rig.app, &session, &config).await.expect("outputs");
+    let copy = |from: &str, to: &str| {
+        assert!(!from.is_empty() && std::path::Path::new(from).exists(), "missing output {to}");
+        std::fs::copy(from, out.join(to)).unwrap();
+    };
+    copy(&outputs.spreadsheet_image_path, "1-spreadsheet-image.png");
+    copy(&outputs.chart_path, "2-chart.png");
+    copy(&outputs.spreadsheet_path, "3-event-spreadsheet.xlsx");
+    let team = crate::managers::spreadsheet::find_spreadsheet_team(&config, &session.team_id).expect("team").clone();
+    if let Some(report) = crate::managers::spreadsheet::generate_period_report(&rig.app, &team, "weekly", chrono::Utc::now(), None, Some(&session)).await.expect("report") {
+        copy(&report.table_image_path, "4-weekly-report-drivers.png");
+        copy(&report.chart_path, "5-weekly-report-chart.png");
+        copy(&report.file_path, "6-weekly-report.xlsx");
+    } else {
+        eprintln!("no weekly report for the sample session");
+    }
+    eprintln!("sample outputs written to {}", out.display());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn pages_in_any_order_give_the_same_event() {
     if !models_ready() {
@@ -558,7 +632,7 @@ async fn a_recruiter_closes_the_ticket_and_one_background_reading_adds_the_stats
     let closing = std::time::Instant::now();
     let click = button_click(&rig.mock, "recruitment:close-team:team:0", RECRUITER, thread, &[RECRUITER_ROLE], "0");
     recruitment::handle_component(rig.app.clone(), responder(&rig, click.clone()), click.data.custom_id.clone()).await;
-    wait_for("the ticket to close", || rig.mock.calls_matching("POST", &format!("/channels/{LOG_CHANNEL}/messages")).len() >= 1).await;
+    wait_for("the ticket to close", || !rig.mock.calls_matching("POST", &format!("/channels/{LOG_CHANNEL}/messages")).is_empty()).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     eprintln!("close -> log posted in {:?}", closing.elapsed());

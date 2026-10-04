@@ -13,7 +13,8 @@ use std::time::Duration;
 const BUTTON_ACTION_TTL: Duration = Duration::from_secs(15 * 60);
 const PING_SETTINGS_CHANNEL: u64 = 839907517663936612;
 const PING_SETTINGS_FIRST_LINE: &str = "It's not necessary to join every time it's reset.";
-const PING_SETTINGS_IMAGE: &str = "https://cdn.discordapp.com/attachments/1341563215611433035/1349012518915539004/20230504_180004-1.jpg?ex=67d18d4f&is=67d03bcf&hm=37688a5b7897d910b2e63227b006459c68b4e74c9bd7d48b5c50f81451766c73&";
+const PING_SETTINGS_IMAGE: &str =
+    "https://cdn.discordapp.com/attachments/1341563215611433035/1349012518915539004/20230504_180004-1.jpg?ex=67d18d4f&is=67d03bcf&hm=37688a5b7897d910b2e63227b006459c68b4e74c9bd7d48b5c50f81451766c73&";
 
 pub struct Handler {
     pub app: Arc<App>,
@@ -56,7 +57,7 @@ impl Drop for ButtonLock {
 
 async fn handle_button(app: Arc<App>, i: ComponentInteraction) {
     let key = button_action_key(&i);
-    let r = Responder::new(app.http.clone(), Ix::Comp(i.clone()));
+    let r = Responder::new(app.http.clone(), Ix::Comp(Box::new(i.clone())));
     if !app.button_locks.lock().unwrap().insert(key.clone()) {
         let _ = r.reply(ReplyData::text("That button action is already being processed.").ephemeral()).await;
         return;
@@ -77,7 +78,7 @@ async fn handle_button(app: Arc<App>, i: ComponentInteraction) {
         drop(lock);
         return;
     }
-    let r = Responder::new(app.http.clone(), Ix::Comp(i));
+    let r = Responder::new(app.http.clone(), Ix::Comp(Box::new(i)));
     if welcome::handle_welcome_team_button(&app, &r, &custom_id).await {
         drop(lock);
     }
@@ -89,7 +90,7 @@ async fn handle_select(app: Arc<App>, i: ComponentInteraction) {
         _ => return,
     };
     if i.data.custom_id == "select_car" {
-        let r = Responder::new(app.http.clone(), Ix::Comp(i));
+        let r = Responder::new(app.http.clone(), Ix::Comp(Box::new(i)));
         commands::mastery::handle_select(&app, &r, &values).await;
     }
 }

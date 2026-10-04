@@ -156,7 +156,7 @@ macro_rules! authed {
     ($web:expr, $headers:expr) => {
         match auth::require(&$web, &$headers).await {
             Ok(user) => user,
-            Err(response) => return response,
+            Err(response) => return *response,
         }
     };
 }
@@ -166,12 +166,7 @@ pub async fn get_config(State(web): State<Web_>, headers: HeaderMap) -> Response
     let store = &web.app.store;
     let config = web.app.config().await;
     let filter = TicketFilter::default();
-    let (lookups, recruitment_logs, bot_logs, tickets) = tokio::join!(
-        guild_lookups(&web, &config),
-        list_recruitment_logs(store, 50),
-        list_bot_logs(store, 100, ""),
-        list_tickets(store, &filter)
-    );
+    let (lookups, recruitment_logs, bot_logs, tickets) = tokio::join!(guild_lookups(&web, &config), list_recruitment_logs(store, 50), list_bot_logs(store, 100, ""), list_tickets(store, &filter));
     Json(json!({
         "config": config_json(&config),
         "lookups": lookups,
@@ -185,7 +180,14 @@ pub async fn get_config(State(web): State<Web_>, headers: HeaderMap) -> Response
 
 pub async fn put_config(State(web): State<Web_>, headers: HeaderMap, raw: Bytes) -> Response {
     authed!(web, headers);
-    let body: Value = if raw.is_empty() { json!({}) } else { match serde_json::from_slice(&raw) { Ok(v) => v, Err(e) => return error(StatusCode::BAD_REQUEST, format!("Invalid JSON body: {e}")) } };
+    let body: Value = if raw.is_empty() {
+        json!({})
+    } else {
+        match serde_json::from_slice(&raw) {
+            Ok(v) => v,
+            Err(e) => return error(StatusCode::BAD_REQUEST, format!("Invalid JSON body: {e}")),
+        }
+    };
     let saved = match save_config_value(&web.app.store, &body).await {
         Ok(saved) => saved,
         Err(message) => return error(StatusCode::BAD_REQUEST, message),
@@ -223,11 +225,7 @@ pub async fn sync_panel(State(web): State<Web_>, headers: HeaderMap) -> Response
     authed!(web, headers);
     let sync = recruitment::ensure_recruitment_panel(&web.app).await;
     let config = web.app.config().await;
-    let sync = if sync.skipped {
-        json!({ "skipped": true, "reason": sync.reason })
-    } else {
-        json!({ "created": sync.created, "channelId": sync.channel_id, "messageId": sync.message_id })
-    };
+    let sync = if sync.skipped { json!({ "skipped": true, "reason": sync.reason }) } else { json!({ "created": sync.created, "channelId": sync.channel_id, "messageId": sync.message_id }) };
     Json(json!({ "config": config_json(&config), "sync": sync })).into_response()
 }
 
@@ -238,11 +236,7 @@ pub async fn sync_ban_list(State(web): State<Web_>, headers: HeaderMap) -> Respo
         Some(c) => c.clone(),
         None => web.app.config().await,
     };
-    let sync = if sync.skipped {
-        json!({ "skipped": true, "reason": sync.reason })
-    } else {
-        json!({ "count": sync.count, "messages": sync.messages, "channelId": sync.channel_id })
-    };
+    let sync = if sync.skipped { json!({ "skipped": true, "reason": sync.reason }) } else { json!({ "count": sync.count, "messages": sync.messages, "channelId": sync.channel_id }) };
     Json(json!({ "config": config_json(&config), "sync": sync })).into_response()
 }
 
@@ -270,7 +264,7 @@ pub async fn transcript(State(web): State<Web_>, headers: HeaderMap, Path(thread
     let store = &web.app.store;
     let Some(mut ticket) = get_ticket(store, &thread_id).await else { return error(StatusCode::NOT_FOUND, "Ticket not found.") };
     let mut transcript = ticket.transcript.clone();
-    if transcript.as_ref().map_or(true, |t| t.text.is_empty()) {
+    if transcript.as_ref().is_none_or(|t| t.text.is_empty()) {
         transcript = None;
         if let Some(thread) = channel_id(&thread_id) {
             let messages = recruitment::fetch_thread_messages(&web.app, thread, 250).await;
@@ -375,15 +369,13 @@ async fn save_tutorial_upload(web: &Web, headers: &HeaderMap, tutorial_id: &str,
     let stem = std::path::Path::new(raw_name).file_stem().and_then(|s| s.to_str()).unwrap_or(tutorial_id);
     let file_name = format!("{tutorial_id}-{}-{}{}", unix_ms(), sanitize_filename(stem), upload_extension(headers));
 
-    let channel = if config.recruitment.tutorial_upload_channel_id.is_empty() { std::env::var("DASHBOARD_UPLOAD_CHANNEL_ID").unwrap_or_default() } else { config.recruitment.tutorial_upload_channel_id.clone() };
+    let channel =
+        if config.recruitment.tutorial_upload_channel_id.is_empty() { std::env::var("DASHBOARD_UPLOAD_CHANNEL_ID").unwrap_or_default() } else { config.recruitment.tutorial_upload_channel_id.clone() };
     if let Some(channel) = channel_id(&channel) {
         let message = channel
             .send_message(
                 &web.app.http,
-                CreateMessage::new()
-                    .content(format!("Tutorial upload: {tutorial_id}"))
-                    .allowed_mentions(CreateAllowedMentions::new())
-                    .add_file(CreateAttachment::bytes(body.to_vec(), file_name)),
+                CreateMessage::new().content(format!("Tutorial upload: {tutorial_id}")).allowed_mentions(CreateAllowedMentions::new()).add_file(CreateAttachment::bytes(body.to_vec(), file_name)),
             )
             .await
             .map_err(|e| e.to_string())?;

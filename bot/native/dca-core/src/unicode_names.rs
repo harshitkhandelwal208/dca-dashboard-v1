@@ -2,18 +2,18 @@
 
 use unicode_normalization::UnicodeNormalization;
 
-pub const ESCALATION_LANGUAGES: &[&str] = &[
-    "rus", "chi_sim", "ara", "jpn", "kor", "tha", "hin", "ell", "heb",
-];
+pub const ESCALATION_LANGUAGES: &[&str] = &["rus", "chi_sim", "ara", "jpn", "kor", "tha", "hin", "ell", "heb"];
 
 /// Strips zero-width and bidi characters.
 pub fn strip_bidi_and_zero_width(s: &str) -> String {
-    s.chars().filter(|&c| {
-        !matches!(
-            c,
-            '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
-        )
-    }).collect()
+    s.chars()
+        .filter(|&c| {
+            !matches!(
+                c,
+                '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
+            )
+        })
+        .collect()
 }
 
 /// Strip decorative badge symbols (™, ®, ©) without decomposing into letters.
@@ -26,7 +26,7 @@ pub fn fold_latin_diacritics(s: &str) -> String {
     let mut out = String::new();
     for c in s.chars() {
         // If it's a Latin character with diacritics, decompose and remove combining marks
-        if (c >= '\u{00C0}' && c <= '\u{024F}') || (c >= '\u{1E00}' && c <= '\u{1EFF}') {
+        if ('\u{00C0}'..='\u{024F}').contains(&c) || ('\u{1E00}'..='\u{1EFF}').contains(&c) {
             let nfd: String = c.to_string().nfd().collect();
             for nc in nfd.chars() {
                 if !('\u{0300}'..='\u{036F}').contains(&nc) {
@@ -82,10 +82,7 @@ pub fn squash(name: &str) -> String {
 /// Clean up common OCR noise, balance brackets, and normalize pipes in player names.
 pub fn clean_player_name(raw: &str) -> String {
     let stripped = strip_bidi_and_zero_width(raw);
-    let mut cleaned = stripped
-        .replace('\r', "")
-        .replace('\n', " ")
-        .replace('\t', " ");
+    let mut cleaned = stripped.replace('\r', "").replace(['\n', '\t'], " ");
 
     cleaned = cleaned.replace(" |", "|").replace("| ", "|");
 
@@ -103,20 +100,17 @@ pub fn clean_player_name(raw: &str) -> String {
 
 /// Sanitize text for Excel XML (strip invalid XML 1.0 control characters).
 pub fn sanitize_for_excel(text: &str) -> String {
-    text.chars().filter(|&c| {
-        let u = c as u32;
-        u == 0x9 || u == 0xA || u == 0xD || (u >= 0x20 && u <= 0xD7FF) || (u >= 0xE000 && u <= 0xFFFD)
-    }).collect()
+    text.chars()
+        .filter(|&c| {
+            let u = c as u32;
+            u == 0x9 || u == 0xA || u == 0xD || (0x20..=0xD7FF).contains(&u) || (0xE000..=0xFFFD).contains(&u)
+        })
+        .collect()
 }
 
 /// Escape text for Discord Markdown and mentions.
 pub fn escape_for_discord(text: &str) -> String {
-    text.replace('@', "@\u{200b}")
-        .replace('*', "\\*")
-        .replace('_', "\\_")
-        .replace('~', "\\~")
-        .replace('`', "\\`")
-        .replace('|', "\\|")
+    text.replace('@', "@\u{200b}").replace('*', "\\*").replace('_', "\\_").replace('~', "\\~").replace('`', "\\`").replace('|', "\\|")
 }
 
 pub fn is_script_char(c: char, script: &str) -> bool {

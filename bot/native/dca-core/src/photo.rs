@@ -159,8 +159,9 @@ fn solve8(mut a: [[f64; 9]; 8]) -> Option<[f64; 8]> {
         a.swap(i, p);
         for r in i + 1..8 {
             let f = a[r][i] / a[i][i];
-            for c in i..9 {
-                a[r][c] -= f * a[i][c];
+            let pivot_row = a[i];
+            for (cell, pivot) in a[r][i..9].iter_mut().zip(&pivot_row[i..9]) {
+                *cell -= f * pivot;
             }
         }
     }
@@ -392,8 +393,8 @@ pub fn rectify_screen(img: &Rgb) -> Option<Rgb> {
     let total = luma.len() as f64;
     let sum_all: f64 = hist.iter().enumerate().map(|(i, &c)| i as f64 * c as f64).sum();
     let (mut sum_b, mut w_b, mut best_t, mut best_var) = (0.0, 0.0, 0usize, 0.0);
-    for t in 0..256 {
-        w_b += hist[t] as f64;
+    for (t, &count) in hist.iter().enumerate() {
+        w_b += count as f64;
         if w_b == 0.0 {
             continue;
         }
@@ -401,7 +402,7 @@ pub fn rectify_screen(img: &Rgb) -> Option<Rgb> {
         if w_f == 0.0 {
             break;
         }
-        sum_b += t as f64 * hist[t] as f64;
+        sum_b += t as f64 * count as f64;
         let (m_b, m_f) = (sum_b / w_b, (sum_all - sum_b) / w_f);
         let var = w_b * w_f * (m_b - m_f).powi(2);
         if var > best_var {

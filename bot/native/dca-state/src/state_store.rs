@@ -89,9 +89,7 @@ impl StateStore {
     }
 
     fn with_backend(json_dir: PathBuf, firebase: Option<Firebase>) -> StateStore {
-        StateStore {
-            inner: Arc::new(Inner { json_dir, firebase, slots: StdMutex::new(HashMap::new()) }),
-        }
+        StateStore { inner: Arc::new(Inner { json_dir, firebase, slots: StdMutex::new(HashMap::new()) }) }
     }
 
     pub fn uses_firebase(&self) -> bool {
@@ -104,10 +102,7 @@ impl StateStore {
 
     fn slot(&self, scope: &str) -> Arc<Mutex<Slot>> {
         let mut slots = self.inner.slots.lock().unwrap();
-        slots
-            .entry(scope.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(Slot { loaded: false, value: Value::Null })))
-            .clone()
+        slots.entry(scope.to_string()).or_insert_with(|| Arc::new(Mutex::new(Slot { loaded: false, value: Value::Null }))).clone()
     }
 
     fn json_path(&self, scope: &str) -> PathBuf {

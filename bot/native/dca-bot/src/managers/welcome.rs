@@ -48,14 +48,7 @@ pub async fn on_member_add(app: &App, member: &Member) {
     }
     let Some(channel) = channel_id(&welcome.channel_id) else { return };
     let (server, count) = guild_info(app, member.guild_id).await;
-    let info = MemberInfo {
-        id: member.user.id,
-        username: member.user.name.clone(),
-        display_name: member.display_name().to_string(),
-        tag: display_tag(&member.user),
-        server,
-        member_count: count,
-    };
+    let info = MemberInfo { id: member.user.id, username: member.user.name.clone(), display_name: member.display_name().to_string(), tag: display_tag(&member.user), server, member_count: count };
     let content = render_member_template(&welcome.message, &info);
     let mentions = CreateAllowedMentions::new().users(vec![member.user.id]);
     if let Err(error) = channel.send_message(&app.http, CreateMessage::new().content(content).allowed_mentions(mentions)).await {
@@ -106,28 +99,12 @@ pub async fn on_member_remove(app: &App, guild: GuildId, user: &User, member: Op
     }
     log_action(
         app,
-        LogEntry::new("system", "Member Left", format!("**{display_name}** (@{username}) left the server."))
-            .guild(guild)
-            .target(user.id, display_tag(user))
-            .meta(json!({ "memberCount": count })),
+        LogEntry::new("system", "Member Left", format!("**{display_name}** (@{username}) left the server.")).guild(guild).target(user.id, display_tag(user)).meta(json!({ "memberCount": count })),
     )
     .await;
 }
 
 const WELCOME_TEAM_PREFIX: &str = "welcome-team:";
-
-/// Buttons a recruiter can press to hand a joined member their team role.
-pub fn team_buttons_for_member(member: UserId, config: &dca_state::config::DashboardConfig) -> Vec<CreateActionRow> {
-    let buttons: Vec<CreateButton> = config
-        .member_counts
-        .teams
-        .iter()
-        .filter(|t| !t.community_role_id.is_empty() || !t.role_id.is_empty())
-        .take(25)
-        .map(|t| CreateButton::new(format!("{WELCOME_TEAM_PREFIX}{member}:{}", t.id)).label(truncate(&t.name, 80)).style(ButtonStyle::Secondary))
-        .collect();
-    buttons.chunks(5).map(|c| CreateActionRow::Buttons(c.to_vec())).collect()
-}
 
 pub async fn handle_welcome_team_button(app: &App, r: &Responder, custom_id: &str) -> bool {
     if !custom_id.starts_with(WELCOME_TEAM_PREFIX) {

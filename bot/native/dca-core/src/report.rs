@@ -39,12 +39,7 @@ pub fn period_bounds(period: &str, anchor: DateTime<Utc>) -> Bounds {
         let offset = day.weekday().num_days_from_monday() as i64;
         let start = day - Duration::days(offset);
         let end = start + Duration::days(7);
-        return Bounds {
-            start,
-            end,
-            key: format!("{}-W{}", start.year(), iso_week_number(start)),
-            label: format!("Week of {}", start.format("%Y-%m-%d")),
-        };
+        return Bounds { start, end, key: format!("{}-W{}", start.year(), iso_week_number(start)), label: format!("Week of {}", start.format("%Y-%m-%d")) };
     }
     let start = Utc.with_ymd_and_hms(day.year(), day.month(), 1, 0, 0, 0).unwrap();
     let (ny, nm) = if day.month() == 12 { (day.year() + 1, 1) } else { (day.year(), day.month() + 1) };
@@ -214,11 +209,7 @@ pub struct TeamInfo<'a> {
 
 pub fn build_report_model(team: &TeamInfo, sessions: &[&SpreadsheetSession], period: &str, bounds: &Bounds, all_sessions: &[SpreadsheetSession]) -> ReportModel {
     let mut used = std::collections::HashSet::new();
-    let event_name = if period == "weekly" {
-        sessions.first().map(|s| event_name_for_session(s, "Team Event")).unwrap_or_else(|| "Team Event".into())
-    } else {
-        "Multiple team events".to_string()
-    };
+    let event_name = if period == "weekly" { sessions.first().map(|s| event_name_for_session(s, "Team Event")).unwrap_or_else(|| "Team Event".into()) } else { "Multiple team events".to_string() };
     let events: Vec<ReportEvent> = sessions
         .iter()
         .enumerate()
@@ -418,9 +409,7 @@ pub fn build_report_xlsx(model: &ReportModel) -> Result<Vec<u8>, String> {
         let headers = ["Driver Rank", "Driver", "Team Event", "Enemy Team(s)", "Best Rank", "Score", "Event Points", "Blues Killed", "Blue Kill %", "#KAB", "Missed", "Attended"];
         let title = format!("{} {} Report", model.team_name, if model.period == "weekly" { "Weekly" } else { "Monthly" });
         let title_style = RowStyle { fill: Some(TITLE_FILL), bold: true, color: Some("#ffffff"), size: 18.0 };
-        sheet
-            .merge_range(0, 0, 0, (headers.len() - 1) as u16, &title, &style_cell(&title_style, FormatAlign::Center))
-            .map_err(|e| e.to_string())?;
+        sheet.merge_range(0, 0, 0, (headers.len() - 1) as u16, &title, &style_cell(&title_style, FormatAlign::Center)).map_err(|e| e.to_string())?;
         let info_style = RowStyle { fill: Some(GOOD_FILL), bold: true, color: None, size: 11.0 };
         write_cells(
             sheet,
@@ -551,7 +540,13 @@ pub fn build_report_xlsx(model: &ReportModel) -> Result<Vec<u8>, String> {
         r += 1;
         for row in &model.rows {
             for cell in &row.events {
-                let fill = if cell.rank.is_none() { Some(MISSED_FILL) } else if cell.kab > 0 { Some(OWN_FILL) } else { None };
+                let fill = if cell.rank.is_none() {
+                    Some(MISSED_FILL)
+                } else if cell.kab > 0 {
+                    Some(OWN_FILL)
+                } else {
+                    None
+                };
                 let style = RowStyle { fill, bold: false, color: None, size: 11.0 };
                 write_cells(
                     sheet,
@@ -776,7 +771,13 @@ pub fn build_report_chart_svg(model: &ReportModel) -> String {
         let y = 130 + index as i64 * 44;
         let value = if row.total_score != 0 { row.total_score } else { row.total_points };
         let bar_width = ((value as f64 / max_score as f64) * chart_width as f64).round() as i64;
-        let fill = if row.blue_kill_percent >= 75.0 { "#0f766e" } else if row.blue_kill_percent >= 40.0 { "#d97706" } else { "#2563eb" };
+        let fill = if row.blue_kill_percent >= 75.0 {
+            "#0f766e"
+        } else if row.blue_kill_percent >= 40.0 {
+            "#d97706"
+        } else {
+            "#2563eb"
+        };
         row_svgs.push(format!(
             "<text x=\"34\" y=\"{}\" font-family=\"Arial\" font-size=\"17\" fill=\"#111827\">#{} {}</text><rect x=\"{chart_x}\" y=\"{y}\" width=\"{}\" height=\"28\" fill=\"{fill}\" rx=\"5\"/><text x=\"{}\" y=\"{}\" font-family=\"Arial\" font-size=\"15\" fill=\"#111827\">{value}</text><text x=\"1000\" y=\"{}\" font-family=\"Arial\" font-size=\"15\" fill=\"#111827\">{}/{} blues ({}%)</text>",
             y + 23,
@@ -843,7 +844,13 @@ pub fn build_report_table_svg(model: &ReportModel) -> String {
     let mut body = Vec::new();
     for (index, row) in model.rows.iter().enumerate() {
         let y = title_height + row_height * (index as u32 + 1);
-        let fill = if row.kab > 0 { "#fff2cc" } else if index % 2 == 0 { "#ffffff" } else { "#f8fafc" };
+        let fill = if row.kab > 0 {
+            "#fff2cc"
+        } else if index % 2 == 0 {
+            "#ffffff"
+        } else {
+            "#f8fafc"
+        };
         let values = [
             row.rank.to_string(),
             row.name.clone(),

@@ -130,7 +130,9 @@ async fn sessions_report_emissions_and_concurrent_mutations() {
     let mut handles = Vec::new();
     for _ in 0..50 {
         let store = store.clone();
-        handles.push(tokio::spawn(async move { add_warning(&store, "u", "g", "x").await.unwrap(); }));
+        handles.push(tokio::spawn(async move {
+            add_warning(&store, "u", "g", "x").await.unwrap();
+        }));
     }
     for handle in handles {
         handle.await.unwrap();

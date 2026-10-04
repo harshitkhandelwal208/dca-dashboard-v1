@@ -19,11 +19,7 @@ impl Renderer {
         let sans = ["Noto Sans", "DejaVu Sans", "Liberation Sans", "Arial"];
         let serif = ["Noto Serif", "DejaVu Serif", "Liberation Serif"];
         let pick = |candidates: &[&str], db: &usvg::fontdb::Database| -> String {
-            candidates
-                .iter()
-                .find(|c| db.faces().any(|f| f.families.iter().any(|(name, _)| name == *c)))
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| candidates[0].to_string())
+            candidates.iter().find(|c| db.faces().any(|f| f.families.iter().any(|(name, _)| name == *c))).map(|c| c.to_string()).unwrap_or_else(|| candidates[0].to_string())
         };
         let sans_family = pick(&sans, &db);
         let serif_family = pick(&serif, &db);
@@ -33,9 +29,7 @@ impl Renderer {
         db.set_fantasy_family(sans_family.clone());
         db.set_monospace_family(sans_family.clone());
 
-        let mut options = usvg::Options::default();
-        options.fontdb = Arc::new(db);
-        options.font_family = sans_family;
+        let options = usvg::Options { fontdb: Arc::new(db), font_family: sans_family, ..Default::default() };
         Renderer { options }
     }
 

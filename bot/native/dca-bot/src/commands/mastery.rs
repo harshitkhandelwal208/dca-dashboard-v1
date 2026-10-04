@@ -42,12 +42,7 @@ pub async fn slash_garage(_app: &App, r: &Responder) -> BotResult<()> {
         CreateSelectMenuKind::String { options: vec![CreateSelectMenuOption::new("Sports Car", "sports_car").emoji(ReactionType::Unicode("\u{1f3ce}\u{fe0f}".into()))] },
     )
     .placeholder("Choose a vehicle");
-    r.reply(
-        ReplyData::text("**Welcome to Mastery Garage!** Choose a vehicle to view its mastery:")
-            .components(vec![CreateActionRow::SelectMenu(menu)])
-            .ephemeral(),
-    )
-    .await
+    r.reply(ReplyData::text("**Welcome to Mastery Garage!** Choose a vehicle to view its mastery:").components(vec![CreateActionRow::SelectMenu(menu)]).ephemeral()).await
 }
 
 /// The garage menu never had a handler in the old bot (choosing a car did nothing); it shows the cards now.

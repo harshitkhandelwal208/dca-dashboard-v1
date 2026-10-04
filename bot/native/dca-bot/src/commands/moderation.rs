@@ -13,10 +13,7 @@ use std::time::Duration;
 
 fn discord_code(error: &serenity::Error) -> Option<isize> {
     match error {
-        serenity::Error::Http(http) => match http {
-            HttpError::UnsuccessfulRequest(resp) => Some(resp.error.code),
-            _ => None,
-        },
+        serenity::Error::Http(HttpError::UnsuccessfulRequest(resp)) => Some(resp.error.code),
         _ => None,
     }
 }
@@ -281,7 +278,14 @@ fn parse_mute_duration(time: &str) -> Option<u64> {
     let re = regex::Regex::new(r"^(\d+)([smhd])$").unwrap();
     let c = re.captures(time)?;
     let v: u64 = c[1].parse().ok()?;
-    Some(v * match &c[2] { "s" => 1000, "m" => 60_000, "h" => 3_600_000, _ => 86_400_000 })
+    Some(
+        v * match &c[2] {
+            "s" => 1000,
+            "m" => 60_000,
+            "h" => 3_600_000,
+            _ => 86_400_000,
+        },
+    )
 }
 
 pub async fn text_mute(app: &App, msg: &Message, args: &[String]) -> BotResult<()> {
@@ -496,7 +500,9 @@ pub async fn text_snapban(app: &App, msg: &Message, args: &[String]) -> BotResul
     dm(app, target, CreateMessage::new().content(format!("\u{1f4a5} You have been snapped from **{server}**.\nReason: {reason}"))).await;
     match guild.ban_with_reason(&app.http, target.id, 0, &reason).await {
         Ok(()) => {
-            msg.channel_id.say(&app.http, format!("\u{2620}\u{fe0f} *\"You should\u{2019}ve gone for the head...\"*\n\u{1f4a8} **{} has been snapped out of existence!**", display_tag(target))).await?;
+            msg.channel_id
+                .say(&app.http, format!("\u{2620}\u{fe0f} *\"You should\u{2019}ve gone for the head...\"*\n\u{1f4a8} **{} has been snapped out of existence!**", display_tag(target)))
+                .await?;
         }
         Err(e) if discord_code(&e) == Some(50013) => {
             msg.reply(&app.http, "\u{1f525} I can't snap that user. They're too powerful!").await?;

@@ -9,12 +9,7 @@ use serenity::all::*;
 use unicode_normalization::UnicodeNormalization;
 
 pub fn normalize_team_name(value: &str) -> String {
-    value
-        .nfkd()
-        .filter(|c| !('\u{0300}'..='\u{036f}').contains(c))
-        .filter(|c| c.is_ascii_alphanumeric())
-        .flat_map(|c| c.to_lowercase())
-        .collect()
+    value.nfkd().filter(|c| !('\u{0300}'..='\u{036f}').contains(c)).filter(|c| c.is_ascii_alphanumeric()).flat_map(|c| c.to_lowercase()).collect()
 }
 
 pub fn find_team<'a>(counts: &'a MemberCountsConfig, name: &str) -> Option<&'a MemberTeam> {
@@ -36,11 +31,7 @@ pub fn build_embed(counts: &MemberCountsConfig) -> CreateEmbed {
         if !team.aliases.is_empty() {
             value.push(format!("**Aliases:** {}", team.aliases.join(", ")));
         }
-        embed = embed.field(
-            format!("{}{}", team.name, if team.division.is_empty() { String::new() } else { format!(" - {}", team.division) }),
-            value.join("\n"),
-            true,
-        );
+        embed = embed.field(format!("{}{}", team.name, if team.division.is_empty() { String::new() } else { format!(" - {}", team.division) }), value.join("\n"), true);
     }
     embed
 }
@@ -96,7 +87,13 @@ pub async fn sync_member_count_message(app: &App, silent: bool, origin: &str) ->
             app,
             LogEntry::new(
                 "memberCount",
-                if created { format!("Member Count Message Created{origin}") } else if origin.is_empty() { "Member Count Message Updated".to_string() } else { "Member Count Message Synced From Dashboard".to_string() },
+                if created {
+                    format!("Member Count Message Created{origin}")
+                } else if origin.is_empty() {
+                    "Member Count Message Updated".to_string()
+                } else {
+                    "Member Count Message Synced From Dashboard".to_string()
+                },
                 format!("{} teams are listed in <#{}>.", counts.teams.len(), guild_channel.id),
             )
             .guild(guild_channel.guild_id)

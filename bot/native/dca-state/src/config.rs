@@ -246,13 +246,7 @@ fn default_member_teams() -> Vec<MemberTeam> {
 }
 
 fn default_youtube_feeds() -> Vec<YoutubeFeed> {
-    let mk = |id: &str, name: &str, channel: &str| YoutubeFeed {
-        id: id.into(),
-        name: name.into(),
-        channel_id: channel.into(),
-        enabled: true,
-        ..Default::default()
-    };
+    let mk = |id: &str, name: &str, channel: &str| YoutubeFeed { id: id.into(), name: name.into(), channel_id: channel.into(), enabled: true, ..Default::default() };
     vec![
         mk("UCyL-QGEkA1r7R7U5rN_Yonw", "Vereshchak", "1341719063780393031"),
         mk("UC16xML3oyIZDeF3g8nnV6MA", "Vokope", "1341719063780393031"),
@@ -276,14 +270,7 @@ pub fn default_config() -> DashboardConfig {
                     aliases.push(alias.clone());
                 }
             }
-            SpreadsheetTeam {
-                id: team.id.clone(),
-                name: team.name.clone(),
-                enabled: false,
-                own_team_aliases: aliases,
-                auto_process: true,
-                ..Default::default()
-            }
+            SpreadsheetTeam { id: team.id.clone(), name: team.name.clone(), enabled: false, own_team_aliases: aliases, auto_process: true, ..Default::default() }
         })
         .collect();
 
@@ -291,11 +278,7 @@ pub fn default_config() -> DashboardConfig {
         version: CONFIG_VERSION,
         updated_at: "1970-01-01T00:00:00.000Z".into(),
         bot: BotConfig { locale: "en-US".into(), ..Default::default() },
-        logging: LoggingConfig {
-            enabled: true,
-            channel_id: String::new(),
-            events: LoggingEvents { tickets: true, member_counts: true, youtube: true, reaction_roles: true, system: true },
-        },
+        logging: LoggingConfig { enabled: true, channel_id: String::new(), events: LoggingEvents { tickets: true, member_counts: true, youtube: true, reaction_roles: true, system: true } },
         welcome: MessageSection {
             enabled: true,
             channel_id: "916042813425201152".into(),
@@ -316,11 +299,7 @@ pub fn default_config() -> DashboardConfig {
             ]
             .join("\n"),
         },
-        leave: MessageSection {
-            enabled: true,
-            channel_id: "839905184154517597".into(),
-            message: "{member} has left the server.".into(),
-        },
+        leave: MessageSection { enabled: true, channel_id: "839905184154517597".into(), message: "{member} has left the server.".into() },
         recruitment: RecruitmentConfig {
             enabled: true,
             panel_title: "DCA Team Recruitment".into(),
@@ -390,11 +369,7 @@ pub fn default_config() -> DashboardConfig {
                 channel_id: "840310137390104627".into(),
                 message_id: String::new(),
                 message: "If you want to speak in other language choose the confirmation reaction to select that.".into(),
-                options: vec![ReactionOption {
-                    emoji: "\u{2611}\u{fe0f}".into(),
-                    role_id: "842089922768797726".into(),
-                    label: "Other language".into(),
-                }],
+                options: vec![ReactionOption { emoji: "\u{2611}\u{fe0f}".into(), role_id: "842089922768797726".into(), label: "Other language".into() }],
             },
             ReactionRoleGroup {
                 id: "event-pings".into(),
@@ -403,11 +378,7 @@ pub fn default_config() -> DashboardConfig {
                 channel_id: "839907517663936612".into(),
                 message_id: String::new(),
                 message: "React with thumbsup if you want ping everytime there is a organized event.".into(),
-                options: vec![ReactionOption {
-                    emoji: "\u{1f44d}".into(),
-                    role_id: "840250757235212339".into(),
-                    label: "PE call".into(),
-                }],
+                options: vec![ReactionOption { emoji: "\u{1f44d}".into(), role_id: "840250757235212339".into(), label: "PE call".into() }],
             },
         ],
     }
@@ -546,7 +517,7 @@ fn value_to_string(value: &Value) -> String {
 fn clean_string_list(value: Raw, fallback: &[String], max_items: usize, max_len: usize) -> Vec<String> {
     let raw: Vec<String> = match value {
         Some(Value::Array(items)) => items.iter().map(value_to_string).collect(),
-        Some(Value::String(text)) => text.split(|c| c == '\n' || c == ',').map(str::to_string).collect(),
+        Some(Value::String(text)) => text.split(['\n', ',']).map(str::to_string).collect(),
         _ => fallback.to_vec(),
     };
     clean_string_items(raw, max_items, max_len)
@@ -588,20 +559,19 @@ fn normalize_bot(input: Raw, fb: &BotConfig) -> BotConfig {
         guild_id: guild_id.clone(),
         community_guild_id: clean_snowflake(
             get(raw, "communityGuildId"),
-            &first_non_empty(&[get(raw, "guildId").and_then(Value::as_str).filter(|s| is_snowflake(s)).unwrap_or("").trim().to_string(), env("COMMUNITY_GUILD_ID"), fb.community_guild_id.clone(), fb.guild_id.clone()]),
+            &first_non_empty(&[
+                get(raw, "guildId").and_then(Value::as_str).filter(|s| is_snowflake(s)).unwrap_or("").trim().to_string(),
+                env("COMMUNITY_GUILD_ID"),
+                fb.community_guild_id.clone(),
+                fb.guild_id.clone(),
+            ]),
         ),
-        recruitment_guild_id: clean_snowflake(
-            get(raw, "recruitmentGuildId"),
-            &first_non_empty(&[env("RECRUITMENT_GUILD_ID"), fb.recruitment_guild_id.clone(), fb.guild_id.clone()]),
-        ),
+        recruitment_guild_id: clean_snowflake(get(raw, "recruitmentGuildId"), &first_non_empty(&[env("RECRUITMENT_GUILD_ID"), fb.recruitment_guild_id.clone(), fb.guild_id.clone()])),
         dashboard_allowed_role_id: clean_snowflake(
             get(raw, "dashboardAllowedRoleId"),
             &first_non_empty(&[env("DASHBOARD_ALLOWED_ROLE_ID"), env("DISCORD_DASHBOARD_ROLE_ID"), fb.dashboard_allowed_role_id.clone()]),
         ),
-        recruiter_role_id: clean_snowflake(
-            get(raw, "recruiterRoleId"),
-            &first_non_empty(&[env("RECRUITER_ROLE_ID"), fb.recruiter_role_id.clone()]),
-        ),
+        recruiter_role_id: clean_snowflake(get(raw, "recruiterRoleId"), &first_non_empty(&[env("RECRUITER_ROLE_ID"), fb.recruiter_role_id.clone()])),
         manager_role_id: clean_snowflake(get(raw, "managerRoleId"), &fb.manager_role_id),
         locale: clean_name(get(raw, "locale"), if fb.locale.is_empty() { "en-US" } else { &fb.locale }, 20),
         command_log_channel_id: clean_snowflake(get(raw, "commandLogChannelId"), &fb.command_log_channel_id),
@@ -610,7 +580,7 @@ fn normalize_bot(input: Raw, fb: &BotConfig) -> BotConfig {
         dashboard_url: {
             let deployed = env("DASHBOARD_BASE_URL");
             if deployed.is_empty() {
-                clean_optional_text(get(raw, "dashboardUrl"), &first_non_empty(&[fb.dashboard_url.clone()]), 300)
+                clean_optional_text(get(raw, "dashboardUrl"), &fb.dashboard_url, 300)
             } else {
                 slice(deployed.trim_end_matches('/'), 300)
             }
@@ -673,14 +643,8 @@ fn normalize_recruitment(input: Raw, base: &RecruitmentConfig) -> RecruitmentCon
         log_channel_id: clean_snowflake(get(raw, "logChannelId"), &base.log_channel_id),
         recruiter_alert_channel_id: clean_snowflake(get(raw, "recruiterAlertChannelId"), &base.recruiter_alert_channel_id),
         tutorial_upload_channel_id: clean_snowflake(get(raw, "tutorialUploadChannelId"), &base.tutorial_upload_channel_id),
-        screenshot_dm_user_id: clean_snowflake(
-            get(raw, "screenshotDmUserId"),
-            &first_non_empty(&[env("RECRUITMENT_SCREENSHOT_DM_USER_ID"), base.screenshot_dm_user_id.clone()]),
-        ),
-        recruiter_role_id: clean_snowflake(
-            get(raw, "recruiterRoleId"),
-            &first_non_empty(&[env("RECRUITER_ROLE_ID"), base.recruiter_role_id.clone()]),
-        ),
+        screenshot_dm_user_id: clean_snowflake(get(raw, "screenshotDmUserId"), &first_non_empty(&[env("RECRUITMENT_SCREENSHOT_DM_USER_ID"), base.screenshot_dm_user_id.clone()])),
+        recruiter_role_id: clean_snowflake(get(raw, "recruiterRoleId"), &first_non_empty(&[env("RECRUITER_ROLE_ID"), base.recruiter_role_id.clone()])),
         invite_guild_id: clean_snowflake(get(raw, "inviteGuildId"), &base.invite_guild_id),
         invite_channel_id: clean_snowflake(get(raw, "inviteChannelId"), &base.invite_channel_id),
         invite_message: clean_text(
@@ -690,35 +654,16 @@ fn normalize_recruitment(input: Raw, base: &RecruitmentConfig) -> RecruitmentCon
         ),
         community_rules_role_id: clean_snowflake(get(raw, "communityRulesRoleId"), &base.community_rules_role_id),
         ban_list_channel_id: clean_snowflake(get(raw, "banListChannelId"), &base.ban_list_channel_id),
-        ban_list_message_ids: ban_list
-            .iter()
-            .take(20)
-            .map(|v| clean_snowflake(Some(v), ""))
-            .filter(|s| !s.is_empty())
-            .collect(),
+        ban_list_message_ids: ban_list.iter().take(20).map(|v| clean_snowflake(Some(v), "")).filter(|s| !s.is_empty()).collect(),
         private_threads: clean_bool(get(raw, "privateThreads"), base.private_threads),
         thread_auto_archive_minutes: clean_number(get(raw, "threadAutoArchiveMinutes"), base.thread_auto_archive_minutes.max(1) as f64, 60.0, 10080.0),
         max_open_tickets_per_user: clean_number(get(raw, "maxOpenTicketsPerUser"), base.max_open_tickets_per_user.max(1) as f64, 1.0, 10.0),
         transcript_on_close: clean_bool(get(raw, "transcriptOnClose"), base.transcript_on_close),
         delete_on_close: false,
         questions_intro: clean_text(get(raw, "questionsIntro"), &base.questions_intro, 800),
-        questions: clean_text(
-            get(raw, "questions"),
-            if base.questions.is_empty() { DEFAULT_RECRUITMENT_QUESTIONS } else { &base.questions },
-            2000,
-        ),
-        teams: raw_teams
-            .iter()
-            .take(12)
-            .map(|team| clean_name(Some(team), "", 40))
-            .filter(|t| !t.is_empty())
-            .collect(),
-        tutorials: raw_tutorials
-            .iter()
-            .take(10)
-            .enumerate()
-            .map(|(index, tutorial)| normalize_tutorial(Some(tutorial), base.tutorials.get(index), index))
-            .collect(),
+        questions: clean_text(get(raw, "questions"), if base.questions.is_empty() { DEFAULT_RECRUITMENT_QUESTIONS } else { &base.questions }, 2000),
+        teams: raw_teams.iter().take(12).map(|team| clean_name(Some(team), "", 40)).filter(|t| !t.is_empty()).collect(),
+        tutorials: raw_tutorials.iter().take(10).enumerate().map(|(index, tutorial)| normalize_tutorial(Some(tutorial), base.tutorials.get(index), index)).collect(),
     }
 }
 
@@ -732,12 +677,10 @@ fn normalize_member_team(input: Raw, base: Option<&MemberTeam>, index: usize) ->
         first_non_empty(&[from_raw_role, b.community_role_id.clone(), b.role_id.clone()])
     };
     let community_role_id = clean_snowflake(get(raw, "communityRoleId"), &community_role_fallback);
-    let community_auto_fallback = get(raw, "autoAssignEnabled")
-        .and_then(Value::as_bool)
-        .unwrap_or(b.community_role_auto_assign_enabled || b.auto_assign_enabled);
+    let community_auto_fallback = get(raw, "autoAssignEnabled").and_then(Value::as_bool).unwrap_or(b.community_role_auto_assign_enabled || b.auto_assign_enabled);
     let community_auto = clean_bool(get(raw, "communityRoleAutoAssignEnabled"), community_auto_fallback);
-    let community_delay_fallback = number_of(get(raw, "autoAssignDelayMinutes"))
-        .unwrap_or(if b.community_role_delay_minutes > 0 { b.community_role_delay_minutes as f64 } else { b.auto_assign_delay_minutes as f64 });
+    let community_delay_fallback =
+        number_of(get(raw, "autoAssignDelayMinutes")).unwrap_or(if b.community_role_delay_minutes > 0 { b.community_role_delay_minutes as f64 } else { b.auto_assign_delay_minutes as f64 });
     let community_delay = clean_number(get(raw, "communityRoleDelayMinutes"), community_delay_fallback, 0.0, 43200.0);
 
     let aliases_raw: Vec<Value> = array(raw, "aliases").cloned().unwrap_or_else(|| b.aliases.iter().map(|a| Value::String(a.clone())).collect());
@@ -772,12 +715,7 @@ fn normalize_member_team(input: Raw, base: Option<&MemberTeam>, index: usize) ->
         role_id: community_role_id,
         auto_assign_enabled: community_auto,
         auto_assign_delay_minutes: community_delay,
-        aliases: aliases_raw
-            .iter()
-            .take(10)
-            .map(|alias| clean_name(Some(alias), "", 60))
-            .filter(|a| !a.is_empty())
-            .collect(),
+        aliases: aliases_raw.iter().take(10).map(|alias| clean_name(Some(alias), "", 60)).filter(|a| !a.is_empty()).collect(),
     }
 }
 
@@ -790,12 +728,7 @@ fn normalize_member_counts(input: Raw, base: &MemberCountsConfig) -> MemberCount
         message_id: clean_snowflake(get(raw, "messageId"), &base.message_id),
         title: clean_name(get(raw, "title"), if base.title.is_empty() { "Member Count" } else { &base.title }, 100),
         update_on_recruitment_close: clean_bool(get(raw, "updateOnRecruitmentClose"), base.update_on_recruitment_close),
-        teams: teams
-            .iter()
-            .take(25)
-            .enumerate()
-            .map(|(index, team)| normalize_member_team(Some(team), base.teams.get(index), index))
-            .collect(),
+        teams: teams.iter().take(25).enumerate().map(|(index, team)| normalize_member_team(Some(team), base.teams.get(index), index)).collect(),
     }
 }
 
@@ -842,11 +775,7 @@ fn normalize_spreadsheets(input: Raw, base: &SpreadsheetsConfig) -> Spreadsheets
         enabled: clean_bool(get(raw, "enabled"), base.enabled),
         session_window_minutes: clean_number(get(raw, "sessionWindowMinutes"), base.session_window_minutes.max(1) as f64, 1.0, 30.0),
         output_format: if ["xlsx", "fods"].contains(&output_format.as_str()) { output_format } else { "xlsx".into() },
-        libre_office_path: clean_optional_text(
-            get(raw, "libreOfficePath"),
-            &first_non_empty(&[env("LIBREOFFICE_PATH"), base.libre_office_path.clone()]),
-            500,
-        ),
+        libre_office_path: clean_optional_text(get(raw, "libreOfficePath"), &first_non_empty(&[env("LIBREOFFICE_PATH"), base.libre_office_path.clone()]), 500),
         raw_data_retention_days: clean_number(get(raw, "rawDataRetentionDays"), base.raw_data_retention_days.max(1) as f64, 1.0, 370.0),
         image_retention_days: clean_number(
             get(raw, "imageRetentionDays"),
@@ -854,12 +783,7 @@ fn normalize_spreadsheets(input: Raw, base: &SpreadsheetsConfig) -> Spreadsheets
             1.0,
             90.0,
         ),
-        teams: raw_teams
-            .iter()
-            .take(30)
-            .enumerate()
-            .map(|(index, team)| normalize_spreadsheet_team(Some(team), base.teams.get(index), index))
-            .collect(),
+        teams: raw_teams.iter().take(30).enumerate().map(|(index, team)| normalize_spreadsheet_team(Some(team), base.teams.get(index), index)).collect(),
     }
 }
 
@@ -882,11 +806,7 @@ fn normalize_youtube_feed(input: Raw, base: Option<&YoutubeFeed>, index: usize) 
         name: clean_name(get(raw, "name"), &if b.name.is_empty() { format!("Feed {}", index + 1) } else { b.name.clone() }, 80),
         channel_id: clean_snowflake(get(raw, "channelId"), &b.channel_id),
         enabled: clean_bool(get(raw, "enabled"), base.map(|f| f.enabled).unwrap_or(true)),
-        last_video_id: clean_optional_text(
-            get(raw, "lastVideoId"),
-            &if b.last_video_id.is_empty() { sent.first().cloned().unwrap_or_default() } else { b.last_video_id.clone() },
-            80,
-        ),
+        last_video_id: clean_optional_text(get(raw, "lastVideoId"), &if b.last_video_id.is_empty() { sent.first().cloned().unwrap_or_default() } else { b.last_video_id.clone() }, 80),
         last_published_at: clean_optional_text(get(raw, "lastPublishedAt"), &b.last_published_at, 80),
         last_checked_at: clean_optional_text(get(raw, "lastCheckedAt"), &b.last_checked_at, 80),
         sent_video_ids: sent,
@@ -902,13 +822,7 @@ fn normalize_youtube(input: Raw, base: &YoutubeConfig) -> YoutubeConfig {
         max_announcement_age_hours: clean_number(get(raw, "maxAnnouncementAgeHours"), base.max_announcement_age_hours.max(1) as f64, 1.0, 720.0),
         default_channel_id: clean_snowflake(get(raw, "defaultChannelId"), &base.default_channel_id),
         announcement_template: clean_text(get(raw, "announcementTemplate"), &base.announcement_template, 1200),
-        feeds: feeds
-            .iter()
-            .take(50)
-            .enumerate()
-            .map(|(index, feed)| normalize_youtube_feed(Some(feed), base.feeds.get(index), index))
-            .filter(|feed| !feed.id.is_empty())
-            .collect(),
+        feeds: feeds.iter().take(50).enumerate().map(|(index, feed)| normalize_youtube_feed(Some(feed), base.feeds.get(index), index)).filter(|feed| !feed.id.is_empty()).collect(),
     }
 }
 
@@ -941,9 +855,7 @@ fn normalize_reaction_group(input: Raw, base: Option<&ReactionRoleGroup>, index:
 pub fn normalize_config(input: &Value, preserve_updated_at: bool) -> DashboardConfig {
     let defaults = default_config();
     let raw = if input.is_object() { Some(input) } else { None };
-    let reaction_roles: Vec<Value> = array(raw, "reactionRoles")
-        .cloned()
-        .unwrap_or_else(|| defaults.reaction_roles.iter().map(|g| serde_json::to_value(g).unwrap()).collect());
+    let reaction_roles: Vec<Value> = array(raw, "reactionRoles").cloned().unwrap_or_else(|| defaults.reaction_roles.iter().map(|g| serde_json::to_value(g).unwrap()).collect());
 
     let version = number_of(get(raw, "version")).unwrap_or(0.0);
     let legacy_window = version < 7.0 && number_of(get(raw.and_then(|r| r.get("spreadsheets")), "sessionWindowMinutes")) == Some(5.0);
@@ -957,11 +869,7 @@ pub fn normalize_config(input: &Value, preserve_updated_at: bool) -> DashboardCo
 
     DashboardConfig {
         version: CONFIG_VERSION,
-        updated_at: if preserve_updated_at {
-            get(raw, "updatedAt").and_then(Value::as_str).map(str::to_string).unwrap_or_else(now_iso)
-        } else {
-            now_iso()
-        },
+        updated_at: if preserve_updated_at { get(raw, "updatedAt").and_then(Value::as_str).map(str::to_string).unwrap_or_else(now_iso) } else { now_iso() },
         bot: normalize_bot(get(raw, "bot"), &defaults.bot),
         logging: normalize_logging(get(raw, "logging"), &defaults.logging),
         welcome: normalize_message_section(get(raw, "welcome"), &defaults.welcome),
@@ -970,12 +878,7 @@ pub fn normalize_config(input: &Value, preserve_updated_at: bool) -> DashboardCo
         member_counts: normalize_member_counts(get(raw, "memberCounts"), &defaults.member_counts),
         spreadsheets: normalize_spreadsheets(spreadsheets_input.as_ref(), &defaults.spreadsheets),
         youtube: normalize_youtube(get(raw, "youtube"), &defaults.youtube),
-        reaction_roles: reaction_roles
-            .iter()
-            .take(25)
-            .enumerate()
-            .map(|(index, group)| normalize_reaction_group(Some(group), defaults.reaction_roles.get(index), index))
-            .collect(),
+        reaction_roles: reaction_roles.iter().take(25).enumerate().map(|(index, group)| normalize_reaction_group(Some(group), defaults.reaction_roles.get(index), index)).collect(),
     }
 }
 
@@ -1005,10 +908,7 @@ pub async fn save_config_value(store: &StateStore, raw: &Value) -> Result<Dashbo
 }
 
 /// Atomically load, change and save the config (no other writer can interleave).
-pub async fn update_config<R>(
-    store: &StateStore,
-    f: impl FnOnce(&mut DashboardConfig) -> R,
-) -> Result<(DashboardConfig, R), String> {
+pub async fn update_config<R>(store: &StateStore, f: impl FnOnce(&mut DashboardConfig) -> R) -> Result<(DashboardConfig, R), String> {
     store
         .mutate(CONFIG_SCOPE, default_value(), |value| {
             let mut config = normalize_config(value, true);

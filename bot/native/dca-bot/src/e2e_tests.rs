@@ -21,10 +21,13 @@ fn models_ready(dir: &std::path::Path) -> bool {
 }
 
 async fn serve_file(bytes: Vec<u8>) -> String {
-    let router = axum::Router::new().route("/shot.jpg", axum::routing::get(move || {
-        let bytes = bytes.clone();
-        async move { ([("content-type", "image/jpeg")], bytes) }
-    }));
+    let router = axum::Router::new().route(
+        "/shot.jpg",
+        axum::routing::get(move || {
+            let bytes = bytes.clone();
+            async move { ([("content-type", "image/jpeg")], bytes) }
+        }),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move { axum::serve(listener, router).await.ok() });

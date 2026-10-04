@@ -9,6 +9,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: bot/native
@@ -16,6 +18,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake pkg-config fontconfig fonts-noto-core
       - name: OCR models (the end-to-end tests use them)
         run: sh bot/scripts/download-models.sh
+      - name: Formatting
+        working-directory: bot/native
+        run: cargo fmt --all --check
+      - name: Lints (warnings are errors)
+        working-directory: bot/native
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
         working-directory: bot/native
         run: cargo test --workspace

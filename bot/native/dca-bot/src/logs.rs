@@ -65,10 +65,7 @@ async fn send_to_discord(app: &App, log: &BotLog, config: &DashboardConfig) {
     if !event_enabled(config, &log.kind) {
         return;
     }
-    let mut embed = CreateEmbed::new()
-        .title(&log.title)
-        .description(if log.message.is_empty() { "No details provided." } else { &log.message })
-        .colour(Colour::new(0x0f766e));
+    let mut embed = CreateEmbed::new().title(&log.title).description(if log.message.is_empty() { "No details provided." } else { &log.message }).colour(Colour::new(0x0f766e));
     if let Ok(ts) = Timestamp::parse(&log.created_at) {
         embed = embed.timestamp(ts);
     }
@@ -82,11 +79,7 @@ async fn send_to_discord(app: &App, log: &BotLog, config: &DashboardConfig) {
         embed = embed.field("Thread", format!("<#{thread}>"), true);
     }
     let content = if log.title == "Member Left" && !log.target_id.is_empty() { format!("<@{}>", log.target_id) } else { String::new() };
-    let mentions = if content.is_empty() {
-        CreateAllowedMentions::new()
-    } else {
-        user_id(&log.target_id).map(|u| CreateAllowedMentions::new().users(vec![u])).unwrap_or_default()
-    };
+    let mentions = if content.is_empty() { CreateAllowedMentions::new() } else { user_id(&log.target_id).map(|u| CreateAllowedMentions::new().users(vec![u])).unwrap_or_default() };
     let mut message = CreateMessage::new().embed(embed).allowed_mentions(mentions);
     if !content.is_empty() {
         message = message.content(content);
@@ -123,13 +116,6 @@ pub async fn log_action(app: &App, entry: LogEntry) -> BotLog {
 
 /// Store only (used by the dashboard sync helpers that never mirrored to Discord).
 pub async fn append_only(app: &App, entry: LogEntry) {
-    let log = BotLog {
-        kind: entry.kind.to_string(),
-        title: entry.title,
-        message: entry.message,
-        guild_id: entry.guild_id,
-        metadata: entry.metadata,
-        ..Default::default()
-    };
+    let log = BotLog { kind: entry.kind.to_string(), title: entry.title, message: entry.message, guild_id: entry.guild_id, metadata: entry.metadata, ..Default::default() };
     let _ = append_bot_log(&app.store, log).await;
 }

@@ -19,16 +19,13 @@ static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 #[derive(Clone, Debug)]
 pub struct Video {
     pub video_id: String,
-    pub title: String,
     pub url: String,
     pub published_at: String,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct FeedResult {
-    pub id: String,
     pub name: String,
-    pub skipped: bool,
     pub reason: String,
     pub initialized: bool,
     pub unchanged: bool,
@@ -74,13 +71,7 @@ async fn fetch_recent_videos(app: &App, channel_id: &str) -> Result<Vec<Video>, 
         if video_id.is_empty() {
             video_id = entry.children().find(|c| c.tag_name().name() == "videoId").and_then(|c| c.text()).unwrap_or("").to_string();
         }
-        let link = entry
-            .children()
-            .filter(|c| c.has_tag_name("link"))
-            .find(|c| c.attribute("rel").map_or(true, |r| r == "alternate"))
-            .and_then(|c| c.attribute("href"))
-            .unwrap_or("")
-            .to_string();
+        let link = entry.children().filter(|c| c.has_tag_name("link")).find(|c| c.attribute("rel").is_none_or(|r| r == "alternate")).and_then(|c| c.attribute("href")).unwrap_or("").to_string();
         if video_id.is_empty() {
             if let Some(v) = link.split("v=").nth(1) {
                 video_id = v.split('&').next().unwrap_or("").to_string();
@@ -89,12 +80,7 @@ async fn fetch_recent_videos(app: &App, channel_id: &str) -> Result<Vec<Video>, 
         if video_id.is_empty() {
             continue;
         }
-        videos.push(Video {
-            title: { let t = child_text("title"); if t.is_empty() { "New video".to_string() } else { t } },
-            url: if link.is_empty() { format!("https://www.youtube.com/watch?v={video_id}") } else { link },
-            published_at: child_text("published"),
-            video_id,
-        });
+        videos.push(Video { url: if link.is_empty() { format!("https://www.youtube.com/watch?v={video_id}") } else { link }, published_at: child_text("published"), video_id });
     }
     Ok(videos)
 }
@@ -151,9 +137,7 @@ struct Patch {
 
 fn feed_patch(feed: &YoutubeFeed, recent: &[Video], announced: &[Video]) -> Patch {
     let latest = recent.first();
-    let ids = unique_ids(
-        recent.iter().map(|v| v.video_id.clone()).chain(announced.iter().map(|v| v.video_id.clone())).chain(video_state(feed)),
-    );
+    let ids = unique_ids(recent.iter().map(|v| v.video_id.clone()).chain(announced.iter().map(|v| v.video_id.clone())).chain(video_state(feed)));
     Patch {
         last_video_id: latest.map(|v| v.video_id.clone()).unwrap_or_else(|| feed.last_video_id.clone()),
         last_published_at: latest.map(|v| v.published_at.clone()).unwrap_or_else(|| feed.last_published_at.clone()),
@@ -172,9 +156,9 @@ async fn run_check(app: &App) -> CheckOutcome {
     let mut patches: HashMap<String, Patch> = HashMap::new();
 
     for feed in &yt.feeds {
-        let base = FeedResult { id: feed.id.clone(), name: feed.name.clone(), ..Default::default() };
+        let base = FeedResult { name: feed.name.clone(), ..Default::default() };
         if !feed.enabled {
-            results.push(FeedResult { skipped: true, reason: "disabled".into(), ..base });
+            results.push(FeedResult { reason: "disabled".into(), ..base });
             continue;
         }
         let recent = match fetch_recent_videos(app, &feed.id).await {
@@ -185,7 +169,7 @@ async fn run_check(app: &App) -> CheckOutcome {
             }
         };
         if recent.is_empty() {
-            results.push(FeedResult { skipped: true, reason: "no videos found".into(), ..base });
+            results.push(FeedResult { reason: "no videos found".into(), ..base });
             continue;
         }
         if video_state(feed).is_empty() {
@@ -231,8 +215,13 @@ async fn run_check(app: &App) -> CheckOutcome {
         results.push(FeedResult {
             posted: posted > 0,
             posted_count: posted,
-            skipped: posted == 0,
-            reason: if !send_error.is_empty() { send_error } else if channel_ok { String::new() } else { "announcement channel is not configured or is not text based".into() },
+            reason: if !send_error.is_empty() {
+                send_error
+            } else if channel_ok {
+                String::new()
+            } else {
+                "announcement channel is not configured or is not text based".into()
+            },
             video_id: announcements.last().map(|v| v.video_id.clone()).unwrap_or_else(|| recent[0].video_id.clone()),
             ..base
         });

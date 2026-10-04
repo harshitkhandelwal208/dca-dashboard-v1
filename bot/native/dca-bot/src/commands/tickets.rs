@@ -81,12 +81,8 @@ pub async fn slash_tickets(app: &App, r: &Responder, cmd: &CommandInteraction) -
                 return Ok(());
             }
             let sync = sync_recruitment_ban_list(app, false).await;
-            r.edit_reply(ReplyData::text(if sync.skipped {
-                format!("Skipped: {}", sync.reason)
-            } else {
-                format!("Recruitment ban list synced in <#{}> ({} users).", sync.channel_id, sync.count)
-            }))
-            .await
+            r.edit_reply(ReplyData::text(if sync.skipped { format!("Skipped: {}", sync.reason) } else { format!("Recruitment ban list synced in <#{}> ({} users).", sync.channel_id, sync.count) }))
+                .await
         }
         "status" => {
             let config = app.config().await;

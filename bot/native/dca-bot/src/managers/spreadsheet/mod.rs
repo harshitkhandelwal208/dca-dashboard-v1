@@ -34,9 +34,7 @@ fn output_dir(app: &App, team_id: &str, session_id: &str) -> PathBuf {
 
 pub fn find_spreadsheet_team<'a>(config: &'a DashboardConfig, value: &str) -> Option<&'a SpreadsheetTeam> {
     let text = normalize(value);
-    config.spreadsheets.teams.iter().find(|t| {
-        t.id == value || normalize(&t.id) == text || normalize(&t.name) == text || t.own_team_aliases.iter().any(|a| normalize(a) == text)
-    })
+    config.spreadsheets.teams.iter().find(|t| t.id == value || normalize(&t.id) == text || normalize(&t.name) == text || t.own_team_aliases.iter().any(|a| normalize(a) == text))
 }
 
 fn enabled_teams(config: &DashboardConfig) -> Vec<&SpreadsheetTeam> {
@@ -89,11 +87,9 @@ pub async fn handle_message(app: &App, message: &Message) -> bool {
     let window = session_window_ms(&config);
     let pending = list_sessions(&app.store, &SessionFilter { team_id: Some(team.id.clone()), status: Some("pending".into()) }).await;
     let author = message.author.id.to_string();
-    let latest = pending.into_iter().find(|s| {
-        s.channel_id == channel
-            && s.author_id == author
-            && unix_ms() - parse_ms(if s.last_image_at.is_empty() { &s.created_at } else { &s.last_image_at }).unwrap_or(0) <= window
-    });
+    let latest = pending
+        .into_iter()
+        .find(|s| s.channel_id == channel && s.author_id == author && unix_ms() - parse_ms(if s.last_image_at.is_empty() { &s.created_at } else { &s.last_image_at }).unwrap_or(0) <= window);
     let mut session = latest.unwrap_or_else(|| SpreadsheetSession {
         team_id: team.id.clone(),
         team_name: team.name.clone(),
@@ -147,9 +143,9 @@ async fn attach_attendance(app: &App, mut session: SpreadsheetSession) -> Spread
     }
     let current: std::collections::HashSet<String> = session.players.iter().filter(|p| p.team_type == "own").map(|p| player_key(&p.player_name)).filter(|k| !k.is_empty()).collect();
     let mut missing: Vec<String> = roster.iter().filter(|(k, _)| !current.contains(k)).map(|(_, n)| n.clone()).collect();
-    missing.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    missing.sort_by_key(|a| a.to_lowercase());
     let mut all: Vec<String> = roster.into_iter().map(|(_, n)| n).collect();
-    all.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    all.sort_by_key(|a| a.to_lowercase());
     session.attendance = Attendance {
         roster: all,
         attended_players: session.players.iter().filter(|p| p.team_type == "own").map(|p| p.player_name.clone()).collect(),
@@ -160,11 +156,7 @@ async fn attach_attendance(app: &App, mut session: SpreadsheetSession) -> Spread
 }
 
 fn team_context(team: &SpreadsheetTeam, learned: &[String]) -> TeamContext {
-    TeamContext {
-        name: team.name.clone(),
-        own_team_aliases: team.own_team_aliases.clone(),
-        own_player_aliases: unique_names(team.own_player_aliases.iter().cloned().chain(learned.iter().cloned())),
-    }
+    TeamContext { name: team.name.clone(), own_team_aliases: team.own_team_aliases.clone(), own_player_aliases: unique_names(team.own_player_aliases.iter().cloned().chain(learned.iter().cloned())) }
 }
 
 // ----------------------------------------------------------------------------------- reading images
@@ -215,15 +207,6 @@ struct Files {
     fods: String,
 }
 
-fn render_files(app: &App, session: &SpreadsheetSession) -> Result<Files, String> {
-    Ok(Files {
-        chart: app.renderer.svg_to_png(&build_chart_svg(session))?,
-        image: app.renderer.svg_to_png(&build_spreadsheet_image_svg(session))?,
-        spreadsheet: build_xlsx(session),
-        fods: build_fods(session),
-    })
-}
-
 /// Write the workbook + images into the session folder and return their paths.
 pub async fn rebuild_artifacts(app: &App, session: &SpreadsheetSession, config: &DashboardConfig) -> Result<Outputs, String> {
     let dir = output_dir(app, &session.team_id, &session.id);
@@ -232,12 +215,7 @@ pub async fn rebuild_artifacts(app: &App, session: &SpreadsheetSession, config: 
     let s2 = session.clone();
     let renderer_app = app.renderer.clone();
     let files = tokio::task::spawn_blocking(move || -> Result<Files, String> {
-        Ok(Files {
-            chart: renderer_app.svg_to_png(&build_chart_svg(&s2))?,
-            image: renderer_app.svg_to_png(&build_spreadsheet_image_svg(&s2))?,
-            spreadsheet: build_xlsx(&s2),
-            fods: build_fods(&s2),
-        })
+        Ok(Files { chart: renderer_app.svg_to_png(&build_chart_svg(&s2))?, image: renderer_app.svg_to_png(&build_spreadsheet_image_svg(&s2))?, spreadsheet: build_xlsx(&s2), fods: build_fods(&s2) })
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -461,7 +439,13 @@ pub async fn rebuild_spreadsheet_session(app: &App, session_id: &str) -> Result<
     if !parsed.raw_text.is_empty() {
         next.raw_ocr_text = parsed.raw_text;
     }
-    next.team_event_name = if !parsed.metadata.event_name.is_empty() { parsed.metadata.event_name.clone() } else if !parsed.metadata.title.is_empty() { parsed.metadata.title.clone() } else { session.team_event_name.clone() };
+    next.team_event_name = if !parsed.metadata.event_name.is_empty() {
+        parsed.metadata.event_name.clone()
+    } else if !parsed.metadata.title.is_empty() {
+        parsed.metadata.title.clone()
+    } else {
+        session.team_event_name.clone()
+    };
     next.outputs = Outputs::default();
     let mut next = attach_attendance(app, next).await;
     next.outputs = rebuild_artifacts(app, &next, &config).await?;
@@ -538,15 +522,7 @@ pub fn build_summary_text(session: &SpreadsheetSession) -> String {
         lines.push(
             best_own
                 .iter()
-                .map(|p| {
-                    format!(
-                        "#{} {} - {} point(s), {} score",
-                        p.rank,
-                        p.player_name,
-                        p.points.or(p.score).unwrap_or(0),
-                        p.score.map(|s| s.to_string()).unwrap_or_else(|| "no score".into())
-                    )
-                })
+                .map(|p| format!("#{} {} - {} point(s), {} score", p.rank, p.player_name, p.points.or(p.score).unwrap_or(0), p.score.map(|s| s.to_string()).unwrap_or_else(|| "no score".into())))
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
@@ -555,7 +531,10 @@ pub fn build_summary_text(session: &SpreadsheetSession) -> String {
         lines.push(format!("Podium: {}", stats.podium.iter().map(|p| format!("#{} {}", p.rank, p.player_name)).collect::<Vec<_>>().join(", ")));
     }
     lines.push(String::new());
-    lines.push("Weekly and monthly reports are rebuilt from processed sessions. Missing players in a period receive 0 for that event, and #KAB counts events where a player ranked above every opponent.".into());
+    lines.push(
+        "Weekly and monthly reports are rebuilt from processed sessions. Missing players in a period receive 0 for that event, and #KAB counts events where a player ranked above every opponent."
+            .into(),
+    );
     let flagged: Vec<String> = session.players.iter().filter(|p| p.flagged).map(|p| format!("#{} {}", p.rank, p.player_name)).collect();
     if !flagged.is_empty() {
         lines.push(format!("Needs a look (low OCR confidence): {}. Use `/spreadsheets correct-name` if a name is wrong.", flagged.join(", ")));
@@ -610,7 +589,7 @@ pub async fn send_session_output(app: &App, session: &SpreadsheetSession) -> Opt
     let target = team.as_ref().map(|t| t.output_channel_id.clone()).filter(|c| !c.is_empty()).unwrap_or_else(|| session.channel_id.clone());
     let channel = channel_id(&target)?;
     let files = session_files(session, true).await;
-    let content = if team.as_ref().map_or(false, |t| !t.output_channel_id.is_empty()) {
+    let content = if team.as_ref().is_some_and(|t| !t.output_channel_id.is_empty()) {
         format!("Final team-event output for **{}** (`{}`).", event_name(session), session.id)
     } else {
         format!("Spreadsheet session `{}` was processed. Configure an output channel to receive automatic final files and reports.", session.id)
@@ -627,10 +606,18 @@ pub async fn send_session_output(app: &App, session: &SpreadsheetSession) -> Opt
         let (a, b, c) = (find(&outputs.fods_path), find(&outputs.spreadsheet_path), find(&outputs.spreadsheet_image_path));
         let d = find(&outputs.chart_path);
         let _ = update_session(&app.store, &session.id, |s| {
-            if let Some(v) = &a { s.outputs.fods_url = v.clone(); }
-            if let Some(v) = &b { s.outputs.spreadsheet_url = v.clone(); }
-            if let Some(v) = &c { s.outputs.spreadsheet_image_url = v.clone(); }
-            if let Some(v) = &d { s.outputs.chart_url = v.clone(); }
+            if let Some(v) = &a {
+                s.outputs.fods_url = v.clone();
+            }
+            if let Some(v) = &b {
+                s.outputs.spreadsheet_url = v.clone();
+            }
+            if let Some(v) = &c {
+                s.outputs.spreadsheet_image_url = v.clone();
+            }
+            if let Some(v) = &d {
+                s.outputs.chart_url = v.clone();
+            }
         })
         .await;
         let _ = first;
@@ -678,7 +665,14 @@ fn reports_dir(app: &App, team_id: &str) -> PathBuf {
     spreadsheet_data_dir(app).join(safe_file_name(team_id, "team")).join("reports")
 }
 
-pub async fn generate_period_report(app: &App, team: &SpreadsheetTeam, period: &str, anchor: DateTime<Utc>, event_override: Option<&str>, anchor_session: Option<&SpreadsheetSession>) -> Result<Option<GeneratedReport>, String> {
+pub async fn generate_period_report(
+    app: &App,
+    team: &SpreadsheetTeam,
+    period: &str,
+    anchor: DateTime<Utc>,
+    event_override: Option<&str>,
+    anchor_session: Option<&SpreadsheetSession>,
+) -> Result<Option<GeneratedReport>, String> {
     let bounds = period_bounds(period, anchor);
     let all = list_sessions(&app.store, &SessionFilter { team_id: Some(team.id.clone()), status: None }).await;
     let sessions = filter_sessions_for_report(&all, period, &bounds, anchor, event_override, anchor_session);
@@ -713,11 +707,7 @@ pub async fn report_attachments(report: &GeneratedReport) -> Vec<CreateAttachmen
 }
 
 pub async fn cleanup_report_images(app: &App, report: &GeneratedReport) {
-    cleanup_generated_image_outputs(
-        app,
-        &Outputs { chart_path: report.chart_path.clone(), table_image_path: report.table_image_path.clone(), ..Default::default() },
-    )
-    .await;
+    cleanup_generated_image_outputs(app, &Outputs { chart_path: report.chart_path.clone(), table_image_path: report.table_image_path.clone(), ..Default::default() }).await;
 }
 
 pub struct ReportResult {
@@ -875,10 +865,7 @@ pub async fn process_and_post(app: &App, session_id: &str, channel: &str) {
         Err(error) => {
             if let Some(ch) = channel_id(channel) {
                 let _ = ch
-                    .send_message(
-                        &app.http,
-                        CreateMessage::new().content(format!("Spreadsheet extraction failed for session `{session_id}`: {error}")).allowed_mentions(CreateAllowedMentions::new()),
-                    )
+                    .send_message(&app.http, CreateMessage::new().content(format!("Spreadsheet extraction failed for session `{session_id}`: {error}")).allowed_mentions(CreateAllowedMentions::new()))
                     .await;
             }
         }
@@ -889,5 +876,5 @@ pub fn can_access_team(member_roles: &[RoleId], perms: Permissions, team: &Sprea
     if perms.contains(Permissions::ADMINISTRATOR) {
         return true;
     }
-    role_id(&team.access_role_id).map_or(false, |r| member_roles.contains(&r))
+    role_id(&team.access_role_id).is_some_and(|r| member_roles.contains(&r))
 }

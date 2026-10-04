@@ -50,12 +50,23 @@ fn preview_text(session: &SpreadsheetSession) -> String {
         .players
         .iter()
         .take(20)
-        .map(|p| format!("#{} {} - {} - pts {} - score {}", p.rank, p.player_name, p.team_type, p.points.map(|v| v.to_string()).unwrap_or_default(), p.score.map(|v| v.to_string()).unwrap_or_default()))
+        .map(|p| {
+            format!("#{} {} - {} - pts {} - score {}", p.rank, p.player_name, p.team_type, p.points.map(|v| v.to_string()).unwrap_or_default(), p.score.map(|v| v.to_string()).unwrap_or_default())
+        })
         .collect();
     truncate(
         &[
             format!("Session: `{}`", session.id),
-            format!("Event: **{}**", if !session.metadata.title.is_empty() { &session.metadata.title } else if !session.team_event_name.is_empty() { &session.team_event_name } else { "Team Event" }),
+            format!(
+                "Event: **{}**",
+                if !session.metadata.title.is_empty() {
+                    &session.metadata.title
+                } else if !session.team_event_name.is_empty() {
+                    &session.team_event_name
+                } else {
+                    "Team Event"
+                }
+            ),
             format!("Players: **{}** ({} own, {} opponents)", session.players.len(), session.stats.own_players, session.stats.opponents),
             format!("Missing own players scored 0: **{}**", session.attendance.missing_players.len()),
             String::new(),
@@ -226,7 +237,9 @@ pub async fn slash_spreadsheets(app: &App, r: &Responder, cmd: &CommandInteracti
                     }
                     ("Team correction applied to `{id}`.", s)
                 }
-                "correct-placement" => ("Placement correction applied to `{id}`.", correct_spreadsheet_session(app, &session.id, mk("placement", opts::integer(o, "placement").unwrap_or(1).to_string(), row)).await?),
+                "correct-placement" => {
+                    ("Placement correction applied to `{id}`.", correct_spreadsheet_session(app, &session.id, mk("placement", opts::integer(o, "placement").unwrap_or(1).to_string(), row)).await?)
+                }
                 "correct-points" => ("Points correction applied to `{id}`.", correct_spreadsheet_session(app, &session.id, mk(opts::string(o, "field").unwrap_or("points"), value, row)).await?),
                 _ => ("Event name correction applied to `{id}`.", correct_spreadsheet_session(app, &session.id, mk("event_name", value, 1)).await?),
             };
@@ -256,7 +269,15 @@ pub async fn slash_spreadsheets(app: &App, r: &Responder, cmd: &CommandInteracti
                     } else {
                         pending
                             .iter()
-                            .map(|s| format!("`{}` - {} image(s), author {}, last image {}", s.id, s.images.len(), if s.author_tag.is_empty() { &s.author_id } else { &s.author_tag }, fmt_local(if !s.last_image_at.is_empty() { &s.last_image_at } else { &s.created_at })))
+                            .map(|s| {
+                                format!(
+                                    "`{}` - {} image(s), author {}, last image {}",
+                                    s.id,
+                                    s.images.len(),
+                                    if s.author_tag.is_empty() { &s.author_id } else { &s.author_tag },
+                                    fmt_local(if !s.last_image_at.is_empty() { &s.last_image_at } else { &s.created_at })
+                                )
+                            })
                             .collect::<Vec<_>>()
                             .join("\n")
                     },

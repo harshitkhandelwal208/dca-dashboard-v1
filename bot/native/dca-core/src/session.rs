@@ -9,9 +9,8 @@ use serde_json::json;
 use std::collections::BTreeMap;
 
 pub const HCR2_TEAM_EVENT_POINTS_BY_RANK: &[i64] = &[
-    300, 280, 262, 244, 228, 213, 198, 185, 173, 161, 150, 140, 131, 122, 114, 107, 99, 93, 87, 81, 75, 70, 66, 61, 57, 54, 50, 47, 44, 41,
-    38, 35, 33, 31, 29, 27, 25, 24, 22, 21, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 9, 9, 8, 8, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 4, 3, 3,
-    3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    300, 280, 262, 244, 228, 213, 198, 185, 173, 161, 150, 140, 131, 122, 114, 107, 99, 93, 87, 81, 75, 70, 66, 61, 57, 54, 50, 47, 44, 41, 38, 35, 33, 31, 29, 27, 25, 24, 22, 21, 19, 18, 17, 16, 15,
+    14, 13, 12, 11, 10, 9, 9, 9, 8, 8, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
 pub fn event_points_for_rank(rank: u32) -> i64 {
@@ -39,10 +38,13 @@ fn alias_matches(text: &str, aliases: &[String]) -> Option<String> {
     if n.is_empty() {
         return None;
     }
-    aliases.iter().find(|a| {
-        let k = normalize_key(a);
-        !k.is_empty() && n.contains(&k)
-    }).cloned()
+    aliases
+        .iter()
+        .find(|a| {
+            let k = normalize_key(a);
+            !k.is_empty() && n.contains(&k)
+        })
+        .cloned()
 }
 
 fn player_alias_matches(name: &str, aliases: &[String]) -> Option<String> {
@@ -115,7 +117,7 @@ pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names
                 continue;
             }
             if row.score.is_none() && row.raw.starts_with("podium ") {
-                if row.rank > 0 && podium_names.get(&row.rank).map_or(true, |(_, c)| *c < row.name_confidence) {
+                if row.rank > 0 && podium_names.get(&row.rank).is_none_or(|(_, c)| *c < row.name_confidence) {
                     podium_names.insert(row.rank, (row.name.clone(), row.name_confidence));
                 }
                 continue;
@@ -129,7 +131,13 @@ pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names
                 team_label: if own { team.name.clone() } else { "Opponent".into() },
                 team_type: kind.into(),
                 team_color: if own { "yellow".into() } else { "blue".into() },
-                row_color: if row.band == 1 { "yellow".into() } else if row.band == 2 { "blue".into() } else { String::new() },
+                row_color: if row.band == 1 {
+                    "yellow".into()
+                } else if row.band == 2 {
+                    "blue".into()
+                } else {
+                    String::new()
+                },
                 row_color_confidence: Some(row.band_confidence as f64),
                 row_color_source: "image-sampler".into(),
                 points: Some(event_points_for_rank(row.rank)),
@@ -167,11 +175,11 @@ pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names
     }
 
     // Rows from pages whose rank column was cut off: place them between ranked neighbours by score.
-    unranked.sort_by(|a, b| b.0.score.unwrap_or(0).cmp(&a.0.score.unwrap_or(0)));
+    unranked.sort_by_key(|a| std::cmp::Reverse(a.0.score.unwrap_or(0)));
     for (mut player, quality) in unranked {
         let Some(score) = player.score else { continue };
-        let above = ranked.values().filter(|(p, _)| p.score.map_or(false, |s| s >= score)).map(|(p, _)| p.rank).max();
-        let below = ranked.values().filter(|(p, _)| p.score.map_or(false, |s| s <= score)).map(|(p, _)| p.rank).min();
+        let above = ranked.values().filter(|(p, _)| p.score.is_some_and(|s| s >= score)).map(|(p, _)| p.rank).max();
+        let below = ranked.values().filter(|(p, _)| p.score.is_some_and(|s| s <= score)).map(|(p, _)| p.rank).min();
         let candidate = match (above, below) {
             (Some(a), Some(b)) if b > a + 1 => (a + 1..b).find(|r| !ranked.contains_key(r)),
             (Some(a), None) => (a + 1..=100).find(|r| !ranked.contains_key(r)),
@@ -211,11 +219,7 @@ pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names
         let right_own = alias_matches(&right, &own_aliases).is_some();
         // The reading player's own team is drawn on the left unless the right-hand name is clearly ours.
         let swap = right_own && !left_own;
-        let (own_name, own_score, opp_name, opp_score) = if swap {
-            (right, h.right_score, left, h.left_score)
-        } else {
-            (left, h.left_score, right, h.right_score)
-        };
+        let (own_name, own_score, opp_name, opp_score) = if swap { (right, h.right_score, left, h.left_score) } else { (left, h.left_score, right, h.right_score) };
         if own_score.is_some() || opp_score.is_some() {
             metadata.team_scores = Some(TeamScores {
                 own: own_score.map(|v| v as f64),
@@ -239,20 +243,12 @@ pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names
     }
 
     let stats = summarize(&players);
-    Parsed {
-        metadata,
-        players,
-        stats,
-        raw_text: pages.iter().enumerate().map(|(i, p)| format!("--- Image {} ---\n{}\n{}", i + 1, p.raw_text, p.header_raw())).collect::<Vec<_>>().join("\n\n"),
-    }
+    Parsed { metadata, players, stats, raw_text: pages.iter().enumerate().map(|(i, p)| format!("--- Image {} ---\n{}\n{}", i + 1, p.raw_text, p.header_raw())).collect::<Vec<_>>().join("\n\n") }
 }
 
 impl StandingsPage {
     fn header_raw(&self) -> String {
-        format!(
-            "title: {} | left: {} {:?} | right: {} {:?}",
-            self.header.title, self.header.left_team, self.header.left_score, self.header.right_team, self.header.right_score
-        )
+        format!("title: {} | left: {} {:?} | right: {} {:?}", self.header.title, self.header.left_team, self.header.left_score, self.header.right_team, self.header.right_score)
     }
 }
 
@@ -311,11 +307,7 @@ pub fn summarize(players: &[Player]) -> Stats {
         buckets,
         opponents_below_by_player: own
             .iter()
-            .map(|p| OpponentsBelow {
-                player_name: p.player_name.clone(),
-                rank: p.rank,
-                opponents_below: opponents.iter().filter(|o| o.rank > p.rank).count() as u32,
-            })
+            .map(|p| OpponentsBelow { player_name: p.player_name.clone(), rank: p.rank, opponents_below: opponents.iter().filter(|o| o.rank > p.rank).count() as u32 })
             .collect(),
     }
 }
@@ -434,7 +426,6 @@ pub fn same_player(a: &str, b: &str) -> bool {
     let (ka, kb) = (player_key(a), player_key(b));
     !ka.is_empty() && ka == kb
 }
-
 
 // ------------------------------------------------------------------------------ stored readings
 

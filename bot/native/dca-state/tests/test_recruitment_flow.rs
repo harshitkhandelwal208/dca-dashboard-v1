@@ -14,8 +14,10 @@ async fn legacy_node_records_load_and_keep_unknown_fields() {
         serde_json::to_string(&json!({ "tickets": { "111": {
             "threadId": "111", "applicantId": "5", "status": "closed", "team": "Discord", "someFutureField": { "x": 1 },
             "licenseAnalysis": { "inGameName": "Racer", "garagePower": "6195", "eventScores": [], "rawGeminiText": "legacy" }
-        } } })).unwrap(),
-    ).unwrap();
+        } } }))
+        .unwrap(),
+    )
+    .unwrap();
 
     let store = StateStore::local(&dir);
     let ticket = get_ticket(&store, "111").await.unwrap();

@@ -133,7 +133,13 @@ pub async fn slash_dashboard(app: &App, r: &Responder) -> BotResult<()> {
 
 fn status_line(app: &App, rest_ms: u128) -> String {
     let secs = app.uptime_secs();
-    let ocr = if app.reader().is_some() { "ready" } else if app.reader_error.read().unwrap().is_empty() { "loading" } else { "unavailable" };
+    let ocr = if app.reader().is_some() {
+        "ready"
+    } else if app.reader_error.read().unwrap().is_empty() {
+        "loading"
+    } else {
+        "unavailable"
+    };
     let gateway = app.gateway_ms.load(std::sync::atomic::Ordering::Relaxed);
     format!(
         "\u{1f3d3} Pong! Round trip **{rest_ms} ms** \u{b7} gateway **{}** \u{b7} uptime **{}h {}m** \u{b7} OCR **{ocr}**",
@@ -349,12 +355,7 @@ pub async fn text_temperature(app: &App, msg: &Message, args: &[String]) -> BotR
         return Ok(());
     }
     let api_key = "e059b3064ced30668da71497d1711908";
-    let response = app
-        .web
-        .get("https://api.openweathermap.org/data/2.5/weather")
-        .query(&[("q", city.as_str()), ("appid", api_key), ("units", "metric")])
-        .send()
-        .await;
+    let response = app.web.get("https://api.openweathermap.org/data/2.5/weather").query(&[("q", city.as_str()), ("appid", api_key), ("units", "metric")]).send().await;
     let data: serde_json::Value = match response {
         Ok(r) if r.status().is_success() => r.json().await.unwrap_or_default(),
         _ => {

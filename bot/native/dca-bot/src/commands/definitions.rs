@@ -123,12 +123,12 @@ fn spreadsheets() -> CreateCommand {
         .description("Manage team-event screenshot spreadsheet sessions")
         .add_option(sub("status", "Show configured spreadsheet status for a team").add_sub_option(team_opt()))
         .add_option(sub("sessions", "List recent spreadsheet sessions for a team").add_sub_option(team_opt()))
-        .add_option(
-            sub("generate", "Generate or refresh a spreadsheet from a pending screenshot session")
-                .add_sub_option(team_opt())
-                .add_sub_option(session_opt(false))
-                .add_sub_option(opt(CommandOptionType::Boolean, "rerun_ocr", "Download images and read them with the local OCR again", false)),
-        )
+        .add_option(sub("generate", "Generate or refresh a spreadsheet from a pending screenshot session").add_sub_option(team_opt()).add_sub_option(session_opt(false)).add_sub_option(opt(
+            CommandOptionType::Boolean,
+            "rerun_ocr",
+            "Download images and read them with the local OCR again",
+            false,
+        )))
         .add_option(sub("summary", "View the parsed summary for a spreadsheet session").add_sub_option(team_opt()).add_sub_option(session_opt(false)))
         .add_option(sub("weekly", "Build the weekly team-event report with missed events scored as zero").add_sub_option(team_opt()).add_sub_option(anchor_opt()))
         .add_option(sub("monthly", "Build the monthly team-event report with missed events scored as zero").add_sub_option(team_opt()).add_sub_option(anchor_opt()))
@@ -151,7 +151,13 @@ fn spreadsheets() -> CreateCommand {
                 )
                 .add_sub_option(value_opt("Replacement value", true)),
         )
-        .add_option(sub("correct-name", "Staff: correct a player name and rebuild").add_sub_option(team_opt()).add_sub_option(session_opt(true)).add_sub_option(row_opt()).add_sub_option(value_opt("Correct player name", true)))
+        .add_option(
+            sub("correct-name", "Staff: correct a player name and rebuild")
+                .add_sub_option(team_opt())
+                .add_sub_option(session_opt(true))
+                .add_sub_option(row_opt())
+                .add_sub_option(value_opt("Correct player name", true)),
+        )
         .add_option(
             sub("correct-team", "Staff: correct a player team assignment and rebuild")
                 .add_sub_option(team_opt())
@@ -175,7 +181,9 @@ fn spreadsheets() -> CreateCommand {
                 .add_sub_option(string("field", "Which numeric field to correct", true).add_string_choice("Event points", "points").add_string_choice("Score", "score"))
                 .add_sub_option(value_opt("Replacement value", true)),
         )
-        .add_option(sub("correct-event-name", "Staff: correct the event name and rebuild").add_sub_option(team_opt()).add_sub_option(session_opt(true)).add_sub_option(value_opt("Correct event name", true)))
+        .add_option(
+            sub("correct-event-name", "Staff: correct the event name and rebuild").add_sub_option(team_opt()).add_sub_option(session_opt(true)).add_sub_option(value_opt("Correct event name", true)),
+        )
         .add_option(sub("rebuild", "Rebuild spreadsheet outputs from the saved readings and corrections").add_sub_option(team_opt()).add_sub_option(session_opt(true)))
         .add_option(sub("regenerate-weekly", "Staff: regenerate and post the weekly report").add_sub_option(team_opt()).add_sub_option(anchor_opt()))
         .add_option(sub("regenerate-monthly", "Staff: regenerate and post the monthly report").add_sub_option(team_opt()).add_sub_option(anchor_opt()))
@@ -224,10 +232,7 @@ pub fn all() -> Vec<CreateCommand> {
             .default_member_permissions(Permissions::MANAGE_GUILD)
             .add_option(sub("list", "Show configured YouTube feeds"))
             .add_option(sub("check", "Run one YouTube feed check now")),
-        CreateCommand::new("remindme")
-            .description("Set a reminder")
-            .add_option(string("duration", "e.g., 10m, 1h", true))
-            .add_option(string("message", "Reminder message", true)),
+        CreateCommand::new("remindme").description("Set a reminder").add_option(string("duration", "e.g., 10m, 1h", true)).add_option(string("message", "Reminder message", true)),
         CreateCommand::new("reminders").description("List your active reminders"),
         CreateCommand::new("cancelreminder").description("Cancel a reminder by ID").add_option(int("id", "The ID of the reminder to cancel", true)),
         CreateCommand::new("snap")

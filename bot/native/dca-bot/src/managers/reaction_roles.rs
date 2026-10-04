@@ -1,7 +1,7 @@
 //! Dashboard-managed reaction-role messages (`reactionRoleManager.js` + the dashboard sync twin).
 
 use crate::app::App;
-use crate::logs::{log_action, append_only, LogEntry};
+use crate::logs::{append_only, log_action, LogEntry};
 use crate::util::*;
 use dca_state::config::{update_config, DashboardConfig, ReactionRoleGroup};
 use serde::Serialize;
@@ -140,13 +140,9 @@ pub async fn sync_reaction_roles(app: &App, from_dashboard: bool) -> Result<(Das
     if from_dashboard {
         append_only(
             app,
-            LogEntry::new(
-                "reactionRole",
-                "Reaction Roles Synced From Dashboard",
-                format!("{} reaction role message(s) were synced.", results.iter().filter(|r| r.skipped != Some(true)).count()),
-            )
-            .guild(&next.bot.guild_id)
-            .meta(json!({ "results": results })),
+            LogEntry::new("reactionRole", "Reaction Roles Synced From Dashboard", format!("{} reaction role message(s) were synced.", results.iter().filter(|r| r.skipped != Some(true)).count()))
+                .guild(&next.bot.guild_id)
+                .meta(json!({ "results": results })),
         )
         .await;
     }
@@ -162,12 +158,7 @@ fn emoji_matches(expected: &str, emoji: &ReactionType) -> bool {
         ReactionType::Unicode(s) => s == expected || s.trim_end_matches('\u{fe0f}') == expected.trim_end_matches('\u{fe0f}'),
         ReactionType::Custom { id, name, animated } => {
             let name = name.clone().unwrap_or_default();
-            let keys = [
-                name.clone(),
-                id.to_string(),
-                format!("{name}:{id}"),
-                format!("<{}:{name}:{id}>", if *animated { "a" } else { "" }),
-            ];
+            let keys = [name.clone(), id.to_string(), format!("{name}:{id}"), format!("<{}:{name}:{id}>", if *animated { "a" } else { "" })];
             keys.iter().any(|k| k == expected)
         }
         _ => false,
@@ -191,11 +182,7 @@ pub async fn handle_reaction(app: &App, reaction: &Reaction, add: bool) {
     let Some(role) = role_id(&option.role_id) else { return };
     let reason = format!("Reaction role: {}", group.name);
 
-    let result = if add {
-        app.http.add_member_role(guild_id, user_id, role, Some(&reason)).await
-    } else {
-        app.http.remove_member_role(guild_id, user_id, role, Some(&reason)).await
-    };
+    let result = if add { app.http.add_member_role(guild_id, user_id, role, Some(&reason)).await } else { app.http.remove_member_role(guild_id, user_id, role, Some(&reason)).await };
     if let Err(error) = result {
         tracing::warn!("Reaction role update failed: {error}");
         return;

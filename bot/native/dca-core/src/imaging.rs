@@ -37,9 +37,7 @@ impl Rect {
 impl Rgb {
     /// Decode any supported image, honouring EXIF orientation (phone screenshots/photos are sometimes rotated).
     pub fn decode(bytes: &[u8]) -> Result<Rgb, String> {
-        let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
-            .with_guessed_format()
-            .map_err(|e| format!("unreadable image: {e}"))?;
+        let reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().map_err(|e| format!("unreadable image: {e}"))?;
         let mut decoder = reader.into_decoder().map_err(|e| format!("unreadable image: {e}"))?;
         let orientation = decoder.orientation().ok();
         let mut img = DynamicImage::from_decoder(decoder).map_err(|e| format!("unreadable image: {e}"))?;

@@ -114,10 +114,7 @@ async fn try_assignment(app: &App, a: &TeamRoleAssignment) -> Result<(), String>
     }
     let role = role_id(&a.role_id).ok_or("bad role")?;
     if !member.roles.contains(&role) {
-        app.http
-            .add_member_role(guild, user, role, Some(&format!("Recruitment accepted for {}", a.team_name)))
-            .await
-            .map_err(|e| e.to_string())?;
+        app.http.add_member_role(guild, user, role, Some(&format!("Recruitment accepted for {}", a.team_name))).await.map_err(|e| e.to_string())?;
     }
     Ok(())
 }

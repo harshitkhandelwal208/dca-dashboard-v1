@@ -20,8 +20,6 @@ pub enum ImageKind {
 pub struct ImageCheck {
     pub attachment: Attachment,
     pub kind: ImageKind,
-    pub reason: String,
-    pub original_field: &'static str,
     pub verification: Verification,
 }
 
@@ -64,11 +62,11 @@ async fn quick_kind(app: &App, reader: Arc<Reader>, bytes: Vec<u8>) -> Option<Re
     }
 }
 
-pub fn kind_of(kind: ScreenKind) -> (ImageKind, &'static str) {
+pub fn kind_of(kind: ScreenKind) -> ImageKind {
     match kind {
-        ScreenKind::DriverLicence => (ImageKind::DriverLicense, "Profile/license labels were visible."),
-        ScreenKind::Standings | ScreenKind::Podium => (ImageKind::TeamEventScore, "Team-event result labels were visible."),
-        ScreenKind::Unknown => (ImageKind::Unknown, "No HCR2 recruitment screenshot markers were visible."),
+        ScreenKind::DriverLicence => ImageKind::DriverLicense,
+        ScreenKind::Standings | ScreenKind::Podium => ImageKind::TeamEventScore,
+        ScreenKind::Unknown => ImageKind::Unknown,
     }
 }
 
@@ -110,19 +108,22 @@ pub async fn classify(app: &App, inputs: &[(Attachment, &'static str)], _config:
     let mut out = Vec::new();
     for (attachment, field) in inputs {
         let slot_kind = if *field == "licenseAttachments" { ImageKind::DriverLicense } else { ImageKind::TeamEventScore };
-        let (kind, reason, verification) = match download(app, &attachment.url).await {
-            Err(e) => (ImageKind::Unknown, e, Verification::Quick),
+        let (kind, verification) = match download(app, &attachment.url).await {
+            Err(error) => {
+                tracing::warn!("could not download a screenshot to check it: {error}");
+                (ImageKind::Unknown, Verification::Quick)
+            }
             Ok(bytes) => match quick_kind(app, reader.clone(), bytes).await {
-                Some(Ok(k)) if k != ScreenKind::Unknown => {
-                    let (kind, why) = kind_of(k);
-                    (kind, why.to_string(), Verification::Quick)
+                Some(Ok(k)) => (kind_of(k), Verification::Quick),
+                Some(Err(error)) => {
+                    tracing::warn!("could not read a screenshot to check it: {error}");
+                    (ImageKind::Unknown, Verification::Quick)
                 }
-                Some(Ok(_)) => (ImageKind::Unknown, "No HCR2 screenshot markers were visible.".to_string(), Verification::Quick),
-                Some(Err(e)) => (ImageKind::Unknown, e, Verification::Quick),
-                None => (slot_kind, "The check ran out of time, so the screenshot was accepted without being read.".to_string(), Verification::Unverified),
+                // The check ran out of time: the screenshot is accepted without being read.
+                None => (slot_kind, Verification::Unverified),
             },
         };
-        out.push(ImageCheck { attachment: attachment.clone(), kind, reason, original_field: field, verification });
+        out.push(ImageCheck { attachment: attachment.clone(), kind, verification });
     }
     Some(out)
 }

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub enum Ix {
     Cmd(CommandInteraction),
-    Comp(ComponentInteraction),
+    Comp(Box<ComponentInteraction>),
     Modal(ModalInteraction),
 }
 
@@ -41,10 +41,6 @@ impl ReplyData {
     }
     pub fn file(mut self, file: CreateAttachment) -> ReplyData {
         self.files.push(file);
-        self
-    }
-    pub fn no_mentions(mut self) -> ReplyData {
-        self.allowed_mentions = Some(CreateAllowedMentions::new());
         self
     }
 }
@@ -243,18 +239,4 @@ impl Responder {
     pub async fn ephemeral(&self, content: impl Into<String>) -> BotResult<()> {
         self.reply(ReplyData::text(content).ephemeral()).await
     }
-
-    /// Show a modal (only valid as the first response).
-    pub async fn modal(&self, modal: CreateModal) -> BotResult<()> {
-        self.respond(CreateInteractionResponse::Modal(modal)).await
-    }
-
-    /// Best-effort error reply used by the dispatchers.
-    pub async fn fail(&self, content: &str) {
-        let _ = self.reply(ReplyData::text(content).ephemeral()).await;
-    }
-}
-
-pub fn option_value<'a>(options: &'a [ResolvedOption<'a>], name: &str) -> Option<&'a ResolvedValue<'a>> {
-    options.iter().find(|o| o.name == name).map(|o| &o.value)
 }

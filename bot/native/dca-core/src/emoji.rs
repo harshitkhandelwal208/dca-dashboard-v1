@@ -125,7 +125,11 @@ impl EmojiIndex {
             }
         }
         if std::env::var("DCA_OCR_DEBUG").is_ok() {
-            eprintln!("emoji templates: {} ({} flags)", templates.len(), templates.iter().filter(|t| t.glyph.chars().count() == 2 && t.glyph.chars().all(|c| ('\u{1F1E6}'..='\u{1F1FF}').contains(&c))).count());
+            eprintln!(
+                "emoji templates: {} ({} flags)",
+                templates.len(),
+                templates.iter().filter(|t| t.glyph.chars().count() == 2 && t.glyph.chars().all(|c| ('\u{1F1E6}'..='\u{1F1FF}').contains(&c))).count()
+            );
         }
         if templates.is_empty() {
             return Err("the emoji font has no bitmap glyphs".into());
@@ -135,6 +139,10 @@ impl EmojiIndex {
 
     pub fn len(&self) -> usize {
         self.templates.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.templates.is_empty()
     }
 
     /// Background colour of a region: the dominant yellow/blue band tone, else the median of the border pixels.
@@ -318,9 +326,7 @@ impl EmojiIndex {
                 let (a, b) = (template.mask[i], probe.mask[i]);
                 if a && b {
                     inter += 1;
-                    let d = (template.rgb[i][0] - probe.rgb[i][0]).abs()
-                        + (template.rgb[i][1] - probe.rgb[i][1]).abs()
-                        + (template.rgb[i][2] - probe.rgb[i][2]).abs();
+                    let d = (template.rgb[i][0] - probe.rgb[i][0]).abs() + (template.rgb[i][1] - probe.rgb[i][1]).abs() + (template.rgb[i][2] - probe.rgb[i][2]).abs();
                     colour_err += d / 765.0;
                     colour_n += 1;
                 }
@@ -334,7 +340,7 @@ impl EmojiIndex {
             let iou = inter as f32 / union as f32;
             let colour = 1.0 - colour_err / colour_n as f32;
             let score = 0.55 * iou + 0.45 * colour;
-            if best.map_or(true, |(_, s)| score > s) {
+            if best.is_none_or(|(_, s)| score > s) {
                 best = Some((template, score));
             }
         }

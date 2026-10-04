@@ -42,11 +42,7 @@ fn array_at<'a>(root: &'a mut Value, key: &str) -> &'a mut Vec<Value> {
 }
 
 fn list_of<T: DeserializeOwned + Default>(value: &Value, key: &str) -> Vec<T> {
-    value
-        .get(key)
-        .and_then(Value::as_array)
-        .map(|items| items.iter().filter(|v| v.is_object()).map(from_value::<T>).collect())
-        .unwrap_or_default()
+    value.get(key).and_then(Value::as_array).map(|items| items.iter().filter(|v| v.is_object()).map(from_value::<T>).collect()).unwrap_or_default()
 }
 
 fn s<'a>(value: &'a Value, key: &str) -> &'a str {
@@ -67,13 +63,9 @@ pub struct TicketFilter {
 
 pub async fn list_tickets(store: &StateStore, filter: &TicketFilter) -> Vec<Ticket> {
     let state = store.read(TICKETS_SCOPE, json!({ "tickets": {} })).await;
-    let mut tickets: Vec<Ticket> = state
-        .get("tickets")
-        .and_then(Value::as_object)
-        .map(|map| map.values().filter(|v| v.is_object()).map(from_value::<Ticket>).collect())
-        .unwrap_or_default();
-    tickets.retain(|t| filter.status.as_ref().map_or(true, |st| &t.status == st));
-    tickets.retain(|t| filter.applicant_id.as_ref().map_or(true, |id| &t.applicant_id == id));
+    let mut tickets: Vec<Ticket> = state.get("tickets").and_then(Value::as_object).map(|map| map.values().filter(|v| v.is_object()).map(from_value::<Ticket>).collect()).unwrap_or_default();
+    tickets.retain(|t| filter.status.as_ref().is_none_or(|st| &t.status == st));
+    tickets.retain(|t| filter.applicant_id.as_ref().is_none_or(|id| &t.applicant_id == id));
     tickets.sort_by(|a, b| {
         let ka = if a.updated_at.is_empty() { &a.created_at } else { &a.updated_at };
         let kb = if b.updated_at.is_empty() { &b.created_at } else { &b.updated_at };
@@ -84,11 +76,7 @@ pub async fn list_tickets(store: &StateStore, filter: &TicketFilter) -> Vec<Tick
 
 pub async fn get_ticket(store: &StateStore, thread_id: &str) -> Option<Ticket> {
     let state = store.read(TICKETS_SCOPE, json!({ "tickets": {} })).await;
-    state
-        .get("tickets")
-        .and_then(|t| t.get(thread_id))
-        .filter(|v| v.is_object())
-        .map(from_value::<Ticket>)
+    state.get("tickets").and_then(|t| t.get(thread_id)).filter(|v| v.is_object()).map(from_value::<Ticket>)
 }
 
 pub async fn save_ticket(store: &StateStore, mut ticket: Ticket) -> Result<Ticket, String> {
@@ -105,11 +93,7 @@ pub async fn save_ticket(store: &StateStore, mut ticket: Ticket) -> Result<Ticke
     Ok(saved)
 }
 
-pub async fn update_ticket(
-    store: &StateStore,
-    thread_id: &str,
-    f: impl FnOnce(&mut Ticket),
-) -> Result<Option<Ticket>, String> {
+pub async fn update_ticket(store: &StateStore, thread_id: &str, f: impl FnOnce(&mut Ticket)) -> Result<Option<Ticket>, String> {
     store
         .mutate(TICKETS_SCOPE, json!({ "tickets": {} }), |state| {
             let tickets = object_at(state, "tickets");
@@ -126,14 +110,8 @@ pub async fn update_ticket(
 
 pub async fn list_recruitment_logs(store: &StateStore, limit: usize) -> Vec<Value> {
     let state = store.read(LOGS_SCOPE, json!({ "logs": [] })).await;
-    let mut logs: Vec<Value> = state
-        .get("logs")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|log| s(log, "outcome") == "accepted" || !s(log, "team").is_empty())
-        .collect();
+    let mut logs: Vec<Value> =
+        state.get("logs").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().filter(|log| s(log, "outcome") == "accepted" || !s(log, "team").is_empty()).collect();
     logs.sort_by(|a, b| {
         let ka = if s(a, "closedAt").is_empty() { s(a, "createdAt") } else { s(a, "closedAt") };
         let kb = if s(b, "closedAt").is_empty() { s(b, "createdAt") } else { s(b, "closedAt") };
@@ -181,11 +159,7 @@ const BANS_SCOPE: &str = "recruitmentBans";
 
 pub async fn list_recruitment_bans(store: &StateStore) -> Vec<RecruitmentBan> {
     let state = store.read(BANS_SCOPE, json!({ "bans": {} })).await;
-    let mut bans: Vec<RecruitmentBan> = state
-        .get("bans")
-        .and_then(Value::as_object)
-        .map(|m| m.values().filter(|v| v.is_object()).map(from_value::<RecruitmentBan>).collect())
-        .unwrap_or_default();
+    let mut bans: Vec<RecruitmentBan> = state.get("bans").and_then(Value::as_object).map(|m| m.values().filter(|v| v.is_object()).map(from_value::<RecruitmentBan>).collect()).unwrap_or_default();
     bans.sort_by(|a, b| {
         let ka = if a.updated_at.is_empty() { &a.created_at } else { &a.updated_at };
         let kb = if b.updated_at.is_empty() { &b.created_at } else { &b.updated_at };
@@ -253,11 +227,7 @@ pub async fn append_bot_log(store: &StateStore, mut log: BotLog) -> Result<BotLo
 
 pub async fn list_bot_logs(store: &StateStore, limit: usize, kind: &str) -> Vec<BotLog> {
     let state = store.read(BOT_LOGS_SCOPE, json!({ "logs": [] })).await;
-    list_of::<BotLog>(&state, "logs")
-        .into_iter()
-        .filter(|log| kind.is_empty() || log.kind == kind)
-        .take(limit.clamp(1, 500))
-        .collect()
+    list_of::<BotLog>(&state, "logs").into_iter().filter(|log| kind.is_empty() || log.kind == kind).take(limit.clamp(1, 500)).collect()
 }
 
 // ============================================================================================ warnings
@@ -289,10 +259,7 @@ pub async fn add_warning(store: &StateStore, user_id: &str, guild_id: &str, reas
 
 pub async fn list_warnings(store: &StateStore, user_id: &str, guild_id: &str) -> Vec<Warning> {
     let state = store.read(WARNINGS_SCOPE, json!({ "warnings": [] })).await;
-    let mut list: Vec<Warning> = list_of::<Warning>(&state, "warnings")
-        .into_iter()
-        .filter(|w| w.user_id == user_id && w.guild_id == guild_id)
-        .collect();
+    let mut list: Vec<Warning> = list_of::<Warning>(&state, "warnings").into_iter().filter(|w| w.user_id == user_id && w.guild_id == guild_id).collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     list
 }
@@ -312,26 +279,11 @@ pub async fn clear_warnings(store: &StateStore, user_id: &str, guild_id: &str) -
 
 const REMINDERS_SCOPE: &str = "reminders";
 
-pub async fn add_reminder(
-    store: &StateStore,
-    user_id: &str,
-    channel_id: &str,
-    guild_id: &str,
-    text: &str,
-    due_at_ms: i64,
-) -> Result<Reminder, String> {
+pub async fn add_reminder(store: &StateStore, user_id: &str, channel_id: &str, guild_id: &str, text: &str, due_at_ms: i64) -> Result<Reminder, String> {
     store
         .mutate(REMINDERS_SCOPE, json!({ "nextId": 1, "reminders": [] }), |state| {
             let next = state.get("nextId").and_then(Value::as_u64).unwrap_or(1).max(1);
-            let reminder = Reminder {
-                id: next,
-                user_id: user_id.into(),
-                channel_id: channel_id.into(),
-                guild_id: guild_id.into(),
-                text: text.into(),
-                due_at: due_at_ms,
-                created_at: now_iso(),
-            };
+            let reminder = Reminder { id: next, user_id: user_id.into(), channel_id: channel_id.into(), guild_id: guild_id.into(), text: text.into(), due_at: due_at_ms, created_at: now_iso() };
             array_at(state, "reminders").push(to_value(&reminder));
             state["nextId"] = json!(next + 1);
             reminder
@@ -341,10 +293,7 @@ pub async fn add_reminder(
 
 pub async fn list_reminders(store: &StateStore, user_id: Option<&str>) -> Vec<Reminder> {
     let state = store.read(REMINDERS_SCOPE, json!({ "nextId": 1, "reminders": [] })).await;
-    list_of::<Reminder>(&state, "reminders")
-        .into_iter()
-        .filter(|r| user_id.map_or(true, |id| r.user_id == id))
-        .collect()
+    list_of::<Reminder>(&state, "reminders").into_iter().filter(|r| user_id.is_none_or(|id| r.user_id == id)).collect()
 }
 
 pub async fn remove_reminder(store: &StateStore, user_id: &str, id: u64) -> Result<bool, String> {
@@ -390,11 +339,6 @@ pub fn new_session_id() -> String {
     format!("race-{stamp}-{}", random_hex(6))
 }
 
-fn session_sort_key(session: &SpreadsheetSession) -> i64 {
-    let value = if session.updated_at.is_empty() { &session.created_at } else { &session.updated_at };
-    parse_ms(value).unwrap_or(0)
-}
-
 #[derive(Default, Clone)]
 pub struct SessionFilter {
     pub team_id: Option<String>,
@@ -412,8 +356,8 @@ pub async fn list_sessions(store: &StateStore, filter: &SessionFilter) -> Vec<Sp
             items
                 .iter()
                 .filter(|v| v.is_object())
-                .filter(|v| filter.team_id.as_ref().map_or(true, |id| s(v, "teamId") == id))
-                .filter(|v| filter.status.as_ref().map_or(true, |st| s(v, "status") == st))
+                .filter(|v| filter.team_id.as_ref().is_none_or(|id| s(v, "teamId") == id))
+                .filter(|v| filter.status.as_ref().is_none_or(|st| s(v, "status") == st))
                 .map(from_value::<SpreadsheetSession>)
                 .collect()
         })
@@ -452,16 +396,10 @@ fn write_session(list: &mut Vec<Value>, mut session: SpreadsheetSession) -> Spre
 }
 
 pub async fn save_session(store: &StateStore, session: SpreadsheetSession) -> Result<SpreadsheetSession, String> {
-    store
-        .mutate(SESSIONS_SCOPE, json!({ "sessions": [] }), |state| write_session(array_at(state, "sessions"), session))
-        .await
+    store.mutate(SESSIONS_SCOPE, json!({ "sessions": [] }), |state| write_session(array_at(state, "sessions"), session)).await
 }
 
-pub async fn update_session(
-    store: &StateStore,
-    id: &str,
-    f: impl FnOnce(&mut SpreadsheetSession),
-) -> Result<Option<SpreadsheetSession>, String> {
+pub async fn update_session(store: &StateStore, id: &str, f: impl FnOnce(&mut SpreadsheetSession)) -> Result<Option<SpreadsheetSession>, String> {
     store
         .mutate(SESSIONS_SCOPE, json!({ "sessions": [] }), |state| {
             let list = array_at(state, "sessions");
@@ -475,10 +413,7 @@ pub async fn update_session(
 }
 
 pub async fn latest_session(store: &StateStore, team_id: &str, statuses: &[&str]) -> Option<SpreadsheetSession> {
-    list_sessions(store, &SessionFilter { team_id: Some(team_id.into()), status: None })
-        .await
-        .into_iter()
-        .find(|session| statuses.is_empty() || statuses.contains(&session.status.as_str()))
+    list_sessions(store, &SessionFilter { team_id: Some(team_id.into()), status: None }).await.into_iter().find(|session| statuses.is_empty() || statuses.contains(&session.status.as_str()))
 }
 
 /// Drop bulky raw OCR text from old processed sessions. Returns the number of sessions cleaned.
@@ -488,15 +423,11 @@ pub async fn cleanup_raw_data(store: &StateStore, retention_days: u32) -> usize 
         .mutate(SESSIONS_SCOPE, json!({ "sessions": [] }), |state| {
             let mut cleaned = 0;
             for item in array_at(state, "sessions").iter_mut() {
-                let has_raw = !s(item, "rawOcrText").is_empty() || item.get("readings").and_then(Value::as_array).map_or(false, |a| !a.is_empty());
+                let has_raw = !s(item, "rawOcrText").is_empty() || item.get("readings").and_then(Value::as_array).is_some_and(|a| !a.is_empty());
                 if s(item, "status") != "processed" || !has_raw {
                     continue;
                 }
-                let date = [s(item, "processedAt"), s(item, "updatedAt"), s(item, "createdAt")]
-                    .iter()
-                    .find(|v| !v.is_empty())
-                    .and_then(|v| parse_ms(v))
-                    .unwrap_or(0);
+                let date = [s(item, "processedAt"), s(item, "updatedAt"), s(item, "createdAt")].iter().find(|v| !v.is_empty()).and_then(|v| parse_ms(v)).unwrap_or(0);
                 if date == 0 || date > cutoff {
                     continue;
                 }
@@ -513,9 +444,7 @@ pub async fn cleanup_raw_data(store: &StateStore, retention_days: u32) -> usize 
 
 pub async fn get_report_emission(store: &StateStore, team_id: &str, period: &str, period_key: &str) -> Option<ReportEmission> {
     let state = store.read(REPORTS_SCOPE, json!({ "reports": [] })).await;
-    list_of::<ReportEmission>(&state, "reports")
-        .into_iter()
-        .find(|r| r.team_id == team_id && r.period == period && r.period_key == period_key)
+    list_of::<ReportEmission>(&state, "reports").into_iter().find(|r| r.team_id == team_id && r.period == period && r.period_key == period_key)
 }
 
 pub async fn mark_report_emitted(store: &StateStore, mut emission: ReportEmission) -> Result<ReportEmission, String> {
@@ -525,9 +454,7 @@ pub async fn mark_report_emitted(store: &StateStore, mut emission: ReportEmissio
         .mutate(REPORTS_SCOPE, json!({ "reports": [] }), |state| {
             let list = array_at(state, "reports");
             let value = to_value(&emission);
-            match list.iter().position(|r| {
-                s(r, "teamId") == emission.team_id && s(r, "period") == emission.period && s(r, "periodKey") == emission.period_key
-            }) {
+            match list.iter().position(|r| s(r, "teamId") == emission.team_id && s(r, "period") == emission.period && s(r, "periodKey") == emission.period_key) {
                 Some(index) => list[index] = value,
                 None => list.insert(0, value),
             }
@@ -555,11 +482,7 @@ pub async fn queue_assignments(store: &StateStore, items: Vec<TeamRoleAssignment
 
 pub async fn list_assignments(store: &StateStore) -> Vec<TeamRoleAssignment> {
     let state = store.read(ASSIGNMENTS_SCOPE, json!({ "assignments": {} })).await;
-    state
-        .get("assignments")
-        .and_then(Value::as_object)
-        .map(|m| m.values().filter(|v| v.is_object()).map(from_value::<TeamRoleAssignment>).collect())
-        .unwrap_or_default()
+    state.get("assignments").and_then(Value::as_object).map(|m| m.values().filter(|v| v.is_object()).map(from_value::<TeamRoleAssignment>).collect()).unwrap_or_default()
 }
 
 pub async fn save_assignments(store: &StateStore, items: Vec<TeamRoleAssignment>) -> Result<(), String> {

@@ -3,7 +3,7 @@
 
 use crate::commands;
 use crate::flow_tests::*;
-use crate::mock_discord::{Call, GUILD_ID, BOT_ID};
+use crate::mock_discord::{Call, BOT_ID, GUILD_ID};
 use dca_state::stores::*;
 use serde_json::{json, Value};
 use serenity::all::*;
@@ -42,10 +42,6 @@ fn replies(rig: &Rig) -> Vec<Value> {
         .filter(|c: &Call| (c.method == "POST" && c.path.contains("/callback")) || (c.method == "PATCH" && c.path.contains("/@original")) || (c.method == "POST" && c.path.starts_with("/webhooks/")))
         .map(|c| if c.path.contains("/callback") { c.body["data"].clone() } else { c.body })
         .collect()
-}
-
-fn text_of(rig: &Rig) -> String {
-    replies(rig).iter().map(|v| v.to_string()).collect::<Vec<_>>().join("\n")
 }
 
 async fn run(rig: &Rig, name: &str, options: Vec<Value>, user: u64, perms: &str) -> String {
@@ -317,7 +313,9 @@ async fn spreadsheet_commands_correct_rebuild_and_report() {
     assert!(summary.contains("Players") || summary.contains("players"), "{summary}");
 
     // Fix a name and a placement: the session and its outputs follow.
-    let fixed = run(&rig, "spreadsheets", vec![sub("correct-name", with(team.clone(), vec![opt("session_id", 3, json!(id)), opt("row", 4, json!(1)), opt("value", 3, json!("Corrected Name"))]))], MOD, ADMIN).await;
+    let fixed =
+        run(&rig, "spreadsheets", vec![sub("correct-name", with(team.clone(), vec![opt("session_id", 3, json!(id)), opt("row", 4, json!(1)), opt("value", 3, json!("Corrected Name"))]))], MOD, ADMIN)
+            .await;
     assert!(fixed.contains("Player name correction applied"), "{fixed}");
     let session = get_session(&rig.app.store, &id).await.unwrap();
     assert_eq!(session.players.iter().find(|p| p.rank == 1).unwrap().player_name, "Corrected Name");
@@ -342,15 +340,20 @@ async fn youtube_uploads_are_announced_once() {
     let rig = Rig::new("youtube", false).await;
     rig.mock.register_channel(COMMUNITY_CHANNEL, 0, "videos");
     let feed = Arc::new(Mutex::new(String::new()));
-    let entry = |id: &str, title: &str, when: &str| format!("<entry><id>yt:video:{id}</id><title>{title}</title><link rel=\"alternate\" href=\"https://www.youtube.com/watch?v={id}\"/><published>{when}</published></entry>");
+    let entry = |id: &str, title: &str, when: &str| {
+        format!("<entry><id>yt:video:{id}</id><title>{title}</title><link rel=\"alternate\" href=\"https://www.youtube.com/watch?v={id}\"/><published>{when}</published></entry>")
+    };
     let now = chrono::Utc::now();
     let doc = |entries: String| format!("<?xml version=\"1.0\"?><feed xmlns=\"http://www.w3.org/2005/Atom\">{entries}</feed>");
     *feed.lock().unwrap() = doc(entry("old1", "Old", &(now - chrono::Duration::hours(30)).to_rfc3339()));
     let served = feed.clone();
-    let router = axum::Router::new().route("/feeds/videos.xml", axum::routing::get(move || {
-        let body = served.lock().unwrap().clone();
-        async move { ([("content-type", "application/atom+xml")], body) }
-    }));
+    let router = axum::Router::new().route(
+        "/feeds/videos.xml",
+        axum::routing::get(move || {
+            let body = served.lock().unwrap().clone();
+            async move { ([("content-type", "application/atom+xml")], body) }
+        }),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
     tokio::spawn(async move { axum::serve(listener, router).await.ok() });
@@ -371,7 +374,14 @@ async fn youtube_uploads_are_announced_once() {
 
     *feed.lock().unwrap() = doc(format!("{}{}", entry("new1", "Fresh upload", &now.to_rfc3339()), entry("old1", "Old", &(now - chrono::Duration::hours(30)).to_rfc3339())));
     let second = crate::managers::youtube::check_feeds(&rig.app).await;
-    assert!(matches!(second, crate::managers::youtube::CheckOutcome::Results(ref r) if r[0].posted), "{:?}", match second { crate::managers::youtube::CheckOutcome::Results(r) => format!("{:?}", r), _ => String::new() });
+    assert!(
+        matches!(second, crate::managers::youtube::CheckOutcome::Results(ref r) if r[0].posted),
+        "{:?}",
+        match second {
+            crate::managers::youtube::CheckOutcome::Results(r) => format!("{:?}", r),
+            _ => String::new(),
+        }
+    );
     let posts = rig.mock.messages_in(COMMUNITY_CHANNEL);
     assert_eq!(posts.len(), 1, "{:?}", rig.mock.calls().iter().map(|c| format!("{} {}", c.method, c.path)).collect::<Vec<_>>());
     assert!(posts[0]["content"].as_str().unwrap().contains("**DCA** uploaded a new video!") && posts[0]["content"].as_str().unwrap().contains("watch?v=new1"), "{}", posts[0]);

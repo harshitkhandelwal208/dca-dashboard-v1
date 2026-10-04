@@ -15,15 +15,7 @@ pub async fn slash_remindme(app: &App, r: &Responder, cmd: &CommandInteraction) 
     let Some(ms) = ms.filter(|ms| *ms >= 5000) else {
         return r.reply(ReplyData::text("\u{26a0}\u{fe0f} Please enter a valid time (min 5s). Try `10m`, `1h`, etc.").ephemeral()).await;
     };
-    let reminder = add_reminder(
-        &app.store,
-        &r.user().id.to_string(),
-        &r.channel_id().to_string(),
-        &r.guild_id().map(|g| g.to_string()).unwrap_or_default(),
-        message,
-        unix_ms() + ms as i64,
-    )
-    .await?;
+    let reminder = add_reminder(&app.store, &r.user().id.to_string(), &r.channel_id().to_string(), &r.guild_id().map(|g| g.to_string()).unwrap_or_default(), message, unix_ms() + ms as i64).await?;
     r.reply(ReplyData::text(format!("\u{2705} Reminder set! I\u{2019}ll remind you in **{duration_input}** (ID: {})", reminder.id))).await
 }
 

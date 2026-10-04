@@ -60,9 +60,11 @@ fn value_below<'a>(lines: &'a [TextLine], label: &TextLine, min_digits: usize, r
 }
 
 pub fn read_licence(names: &NameReader, page: &Rgb, lines: &[TextLine], known_teams: &[String]) -> LicenceReading {
-    let mut out = LicenceReading::default();
-    out.raw_text = lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n");
-    out.anchors = LABELS.iter().filter(|(k, _)| label(lines, k).is_some()).count() as u32;
+    let mut out = LicenceReading {
+        raw_text: lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n"),
+        anchors: LABELS.iter().filter(|(k, _)| label(lines, k).is_some()).count() as u32,
+        ..Default::default()
+    };
 
     if let Some(l) = label(lines, "garage") {
         out.garage_power = value_below(lines, l, 3, 4.5).and_then(|v| numeric_value(&v.text)).filter(|v| (100..=30_000).contains(v));
@@ -92,16 +94,9 @@ pub fn read_licence(names: &NameReader, page: &Rgb, lines: &[TextLine], known_te
         // ...down to the next label row (best season / win streak), whichever layout spaces them how far apart.
         let floor = ["bestseason", "streak"].iter().filter_map(|k| label(lines, k)).map(|n| n.cy()).filter(|cy| *cy > l.cy() + l.h() * 3.0).fold(f32::MAX, f32::min);
         let limit = floor.min(l.cy() + l.h() * 12.0) - l.h() * 0.3;
-        let mut column: Vec<&TextLine> = lines
-            .iter()
-            .filter(|x| x.cy() > l.cy() + l.h() * 1.2 && x.cy() < limit && (x.cx() - l.cx()).abs() < l.w() * 0.7 && !x.text.trim().is_empty())
-            .collect();
+        let mut column: Vec<&TextLine> = lines.iter().filter(|x| x.cy() > l.cy() + l.h() * 1.2 && x.cy() < limit && (x.cx() - l.cx()).abs() < l.w() * 0.7 && !x.text.trim().is_empty()).collect();
         column.sort_by(|a, b| a.cy().partial_cmp(&b.cy()).unwrap());
-        let words: Vec<String> = column
-            .iter()
-            .filter(|x| !is_numeric_token(&x.text) && norm(&x.text) != "rank")
-            .map(|x| x.text.trim().to_string())
-            .collect();
+        let words: Vec<String> = column.iter().filter(|x| !is_numeric_token(&x.text) && norm(&x.text) != "rank").map(|x| x.text.trim().to_string()).collect();
         out.adventurer_rank = words.join(" ");
         out.rank_points = column.iter().find(|x| is_numeric_token(&x.text) && x.text.chars().filter(|c| c.is_ascii_digit()).count() >= 3).and_then(|x| numeric_value(&x.text));
     }
@@ -138,10 +133,10 @@ pub fn read_licence(names: &NameReader, page: &Rgb, lines: &[TextLine], known_te
         };
         let team_line = head.iter().copied().find(|l| is_team(l)).or_else(|| head.first().copied());
         let name_line = match team_line {
-            Some(t) => head.iter().copied().filter(|l| l.cy() < t.cy() - 2.0).next(),
+            Some(t) => head.iter().copied().find(|l| l.cy() < t.cy() - 2.0),
             None => None,
         }
-        .or_else(|| head.iter().copied().find(|l| team_line.map_or(true, |t| !std::ptr::eq(*l, t))));
+        .or_else(|| head.iter().copied().find(|l| team_line.is_none_or(|t| !std::ptr::eq(*l, t))));
         if let Some(l) = name_line {
             let read = names.read(page, [l.x0, l.y0, l.x1, l.y1], &l.text, 0.0, None, None);
             out.name = read.text;

@@ -32,16 +32,15 @@ const MAX_SCREENSHOT_ATTEMPTS: u32 = 3;
 
 pub struct Outcome {
     pub id: &'static str,
-    pub label: &'static str,
     pub team: &'static str,
 }
 
 pub const RECRUITMENT_OUTCOMES: [Outcome; 5] = [
-    Outcome { id: "discord", label: "Discord", team: "Discord" },
-    Outcome { id: "discord2", label: "Discord\u{b2}", team: "Discord\u{b2}" },
-    Outcome { id: "discord3", label: "Discord 3\u{2122}", team: "Discord 3\u{2122}" },
-    Outcome { id: "nascar-dc", label: "Nascar DC", team: "Nascar DC" },
-    Outcome { id: "rejected", label: "Rejected", team: "" },
+    Outcome { id: "discord", team: "Discord" },
+    Outcome { id: "discord2", team: "Discord\u{b2}" },
+    Outcome { id: "discord3", team: "Discord 3\u{2122}" },
+    Outcome { id: "nascar-dc", team: "Nascar DC" },
+    Outcome { id: "rejected", team: "" },
 ];
 
 // ------------------------------------------------------------------------------------------ helpers
@@ -184,7 +183,10 @@ fn panel_is_current(message: &Message, config: &DashboardConfig) -> bool {
     embed.title.as_deref() == Some(r.panel_title.as_str())
         && embed.description.as_deref() == Some(r.panel_description.as_str())
         && embed.colour.map(|c| c.0) == Some(color_to_number(&r.panel_color))
-        && message.components.iter().any(|row| row.components.iter().any(|c| matches!(c, ActionRowComponent::Button(b) if matches!(&b.data, ButtonKind::NonLink { custom_id, .. } if custom_id == APPLY_BUTTON_ID))))
+        && message
+            .components
+            .iter()
+            .any(|row| row.components.iter().any(|c| matches!(c, ActionRowComponent::Button(b) if matches!(&b.data, ButtonKind::NonLink { custom_id, .. } if custom_id == APPLY_BUTTON_ID))))
 }
 
 /// Post or refresh the Apply panel (only edited when it actually differs) and tidy the channel.
@@ -317,7 +319,7 @@ pub fn start_panel_sweeper(app: Arc<App>) {
 fn member_can_recruit(r: &Responder, config: &DashboardConfig) -> bool {
     let Some(member) = r.member() else { return false };
     let role = recruiter_role_id(config);
-    let has_role = role_id(&role).map_or(false, |rid| member.roles.contains(&rid));
+    let has_role = role_id(&role).is_some_and(|rid| member.roles.contains(&rid));
     let perms = r.permissions();
     has_role || perms.contains(Permissions::ADMINISTRATOR) || perms.contains(Permissions::MANAGE_GUILD) || perms.contains(Permissions::MANAGE_THREADS)
 }
@@ -390,15 +392,11 @@ async fn mirror_attachments_to_dm(app: &App, config: &DashboardConfig, attachmen
     for (index, attachment) in attachments.iter().enumerate() {
         let bytes = download(app, &attachment.url).await.map_err(|_| format!("Could not download {} (404).", if attachment.name.is_empty() { "screenshot" } else { &attachment.name }))?;
         let name = safe_attachment_name(&attachment.name, &format!("{}-{}-{}.png", kind, user.id, index + 1));
-        let content = [
-            format!("Recruitment {kind} upload"),
-            format!("Applicant: <@{}> ({})", user.id, display_tag(user)),
-            guild.map(|g| format!("Guild: {g}")).unwrap_or_default(),
-        ]
-        .into_iter()
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+        let content = [format!("Recruitment {kind} upload"), format!("Applicant: <@{}> ({})", user.id, display_tag(user)), guild.map(|g| format!("Guild: {g}")).unwrap_or_default()]
+            .into_iter()
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
         let sent = dm
             .send_message(&app.http, CreateMessage::new().content(content).add_file(CreateAttachment::bytes(bytes.clone(), name.clone())).allowed_mentions(CreateAllowedMentions::new()))
             .await
@@ -471,12 +469,7 @@ struct Classified {
 
 /// Port of `classifyApplicationScreenshots`: sort uploads into licence / event lists and reject wrong ones.
 async fn classify_application_screenshots(app: &App, session: &mut ApplySession, config: &DashboardConfig, shot: ShotType, require_event: bool) -> Result<(), (ShotType, String)> {
-    let inputs: Vec<(Attachment, &'static str)> = session
-        .license
-        .iter()
-        .map(|a| (a.clone(), "licenseAttachments"))
-        .chain(session.events.iter().map(|a| (a.clone(), "eventAttachments")))
-        .collect();
+    let inputs: Vec<(Attachment, &'static str)> = session.license.iter().map(|a| (a.clone(), "licenseAttachments")).chain(session.events.iter().map(|a| (a.clone(), "eventAttachments"))).collect();
     let Some(checks) = classify(app, &inputs, config).await else {
         // No OCR models available: accept the uploads unverified rather than blocking applicants.
         if session.license.is_empty() {
@@ -593,9 +586,7 @@ pub async fn collect_license(app: Arc<App>, r: Responder) {
         return;
     }
     if find_active_session(&app, guild, user.id) {
-        let _ = r
-            .reply(ReplyData::text("You already have an application upload in progress. Finish that upload or wait for it to time out before pressing **Apply!** again.").ephemeral())
-            .await;
+        let _ = r.reply(ReplyData::text("You already have an application upload in progress. Finish that upload or wait for it to time out before pressing **Apply!** again.").ephemeral()).await;
         return;
     }
     if screenshot_dm_user_id(&config).is_empty() {
@@ -622,7 +613,6 @@ pub async fn collect_license(app: Arc<App>, r: Responder) {
         license: Vec::new(),
         events: Vec::new(),
         unverified: false,
-        started: Instant::now(),
     };
     app.apply_sessions.lock().unwrap().insert(token.clone(), session.clone());
     {
@@ -634,9 +624,7 @@ pub async fn collect_license(app: Arc<App>, r: Responder) {
         });
     }
 
-    let _ = r
-        .reply(ReplyData::text("Upload your in-game driver's license screenshot in this channel now. I will store it privately and remove your visible upload right away.").ephemeral())
-        .await;
+    let _ = r.reply(ReplyData::text("Upload your in-game driver's license screenshot in this channel now. I will store it privately and remove your visible upload right away.").ephemeral()).await;
 
     let result = collect_validated_screenshot_upload(
         &app,
@@ -708,9 +696,7 @@ async fn collect_event_screenshots(app: Arc<App>, r: Responder, custom_id: Strin
         let _ = r.reply(ReplyData::text("That application prompt expired. Press **Apply!** again when you are ready.").ephemeral()).await;
         return;
     };
-    let _ = r
-        .update(ReplyData::text("Upload the team event score screenshots in this channel now. I will store them privately and remove the visible upload right away.").components(vec![]))
-        .await;
+    let _ = r.update(ReplyData::text("Upload the team event score screenshots in this channel now. I will store them privately and remove the visible upload right away.").components(vec![])).await;
     let config = app.config().await;
     let result = collect_validated_screenshot_upload(
         &app,
@@ -744,12 +730,7 @@ async fn collect_event_screenshots(app: Arc<App>, r: Responder, custom_id: Strin
 fn build_application_embeds(config: &DashboardConfig, session: &ApplySession) -> Vec<CreateEmbed> {
     let screenshots: Vec<&Attachment> = session.license.iter().chain(session.events.iter()).collect();
     let links = truncate(
-        &screenshots
-            .iter()
-            .enumerate()
-            .map(|(i, a)| format!("[{}]({})", if a.name.is_empty() { format!("Screenshot {}", i + 1) } else { a.name.clone() }, a.url))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        &screenshots.iter().enumerate().map(|(i, a)| format!("[{}]({})", if a.name.is_empty() { format!("Screenshot {}", i + 1) } else { a.name.clone() }, a.url)).collect::<Vec<_>>().join("\n"),
         1000,
     );
     let color = embed_color(&config.recruitment.panel_color);
@@ -779,10 +760,7 @@ fn build_application_embeds(config: &DashboardConfig, session: &ApplySession) ->
 }
 
 fn ticket_controls() -> Vec<CreateActionRow> {
-    vec![CreateActionRow::Buttons(vec![
-        CreateButton::new(CLAIM_ID).label("Claim Ticket").style(ButtonStyle::Secondary),
-        CreateButton::new(CLOSE_ID).label("Close Ticket").style(ButtonStyle::Danger),
-    ])]
+    vec![CreateActionRow::Buttons(vec![CreateButton::new(CLAIM_ID).label("Claim Ticket").style(ButtonStyle::Secondary), CreateButton::new(CLOSE_ID).label("Close Ticket").style(ButtonStyle::Danger)])]
 }
 
 fn auto_archive(minutes: u32) -> AutoArchiveDuration {
@@ -927,7 +905,11 @@ pub async fn claim_ticket(app: &App, r: &Responder) {
     }
     if !ticket.claimed_by_id.is_empty() {
         let _ = r
-            .ephemeral(if ticket.claimed_by_id == r.user().id.to_string() { "You have already claimed this ticket.".to_string() } else { format!("This ticket is already claimed by <@{}>.", ticket.claimed_by_id) })
+            .ephemeral(if ticket.claimed_by_id == r.user().id.to_string() {
+                "You have already claimed this ticket.".to_string()
+            } else {
+                format!("This ticket is already claimed by <@{}>.", ticket.claimed_by_id)
+            })
             .await;
         return;
     }
@@ -955,15 +937,8 @@ pub async fn claim_ticket(app: &App, r: &Responder) {
 }
 
 fn build_close_outcome_rows(config: &DashboardConfig) -> Vec<CreateActionRow> {
-    let mut outcomes: Vec<(String, String, ButtonStyle)> = config
-        .recruitment
-        .teams
-        .iter()
-        .filter(|t| !t.is_empty())
-        .take(24)
-        .enumerate()
-        .map(|(i, t)| (team_outcome_id(i), t.clone(), ButtonStyle::Success))
-        .collect();
+    let mut outcomes: Vec<(String, String, ButtonStyle)> =
+        config.recruitment.teams.iter().filter(|t| !t.is_empty()).take(24).enumerate().map(|(i, t)| (team_outcome_id(i), t.clone(), ButtonStyle::Success)).collect();
     outcomes.push(("rejected".into(), "Rejected".into(), ButtonStyle::Danger));
     outcomes
         .chunks(5)
@@ -1072,10 +1047,18 @@ fn format_event_scores(analysis: &LicenseAnalysis) -> String {
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
-            if details.is_empty() { format!("**{name}** - score not detected") } else { format!("**{name}** - {details}") }
+            if details.is_empty() {
+                format!("**{name}** - score not detected")
+            } else {
+                format!("**{name}** - {details}")
+            }
         })
         .collect();
-    if lines.is_empty() { "Not detected".into() } else { truncate(&lines.join("\n"), 1024) }
+    if lines.is_empty() {
+        "Not detected".into()
+    } else {
+        truncate(&lines.join("\n"), 1024)
+    }
 }
 
 /// The closing log. `stats` is `None` while the one background reading is still running.
@@ -1224,11 +1207,7 @@ pub async fn finish_close(app: &App, r: &Responder, outcome_id: &str) {
         LogEntry::new(
             "ticket",
             if accepted { "Recruitment Ticket Accepted" } else { "Recruitment Ticket Rejected" },
-            if accepted {
-                format!("<@{}> was recruited to **{}**.", ticket.applicant_id, outcome.team)
-            } else {
-                format!("<@{}> was rejected.", ticket.applicant_id)
-            },
+            if accepted { format!("<@{}> was recruited to **{}**.", ticket.applicant_id, outcome.team) } else { format!("<@{}> was rejected.", ticket.applicant_id) },
         )
         .guild(&ticket.guild_id)
         .actor(r.user().id, display_tag(r.user()))
@@ -1248,10 +1227,8 @@ pub async fn finish_close(app: &App, r: &Responder, outcome_id: &str) {
         }
     }
 
-    let _ = thread
-        .id
-        .say(&app.http, format!("Ticket closed by <@{}>. Applicant was {}.", r.user().id, if accepted { format!("recruited to **{}**", outcome.team) } else { "rejected".to_string() }))
-        .await;
+    let _ =
+        thread.id.say(&app.http, format!("Ticket closed by <@{}>. Applicant was {}.", r.user().id, if accepted { format!("recruited to **{}**", outcome.team) } else { "rejected".to_string() })).await;
 
     let done = format!("Ticket closed. Outcome: {}.", if accepted { outcome.team.clone() } else { "Rejected".into() });
     if matches!(r.ix, crate::responder::Ix::Comp(_)) && !r.is_deferred() && !r.is_replied() {
@@ -1567,7 +1544,15 @@ fn refresh_applicant_images(ticket: &Ticket, next_license: &[Attachment], next_e
     clean_screenshot_list(managed.into_iter().chain(retained).collect())
 }
 
-async fn update_ticket_screenshots(app: &App, r: &Responder, thread: GuildChannel, ticket: Ticket, shot: ShotType, action: &str, updater: impl FnOnce(Vec<Attachment>) -> Result<Vec<Attachment>, String>) {
+async fn update_ticket_screenshots(
+    app: &App,
+    r: &Responder,
+    thread: GuildChannel,
+    ticket: Ticket,
+    shot: ShotType,
+    action: &str,
+    updater: impl FnOnce(Vec<Attachment>) -> Result<Vec<Attachment>, String>,
+) {
     if ticket.status == "deleted" {
         let _ = r.ephemeral("This ticket was deleted.").await;
         return;

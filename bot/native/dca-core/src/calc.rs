@@ -158,7 +158,11 @@ pub fn player_display_rows(session: &SpreadsheetSession) -> Vec<DisplayRow> {
                     if p.rank == 0 { Cell::E } else { Cell::N(p.rank as f64) },
                     Cell::S(p.player_name.clone()),
                     Cell::S(if p.team_label.is_empty() {
-                        if own { first_non_empty(&[&session.team_name, &session.team_id, "Own team"]) } else { "Opponent".into() }
+                        if own {
+                            first_non_empty(&[&session.team_name, &session.team_id, "Own team"])
+                        } else {
+                            "Opponent".into()
+                        }
                     } else {
                         p.team_label.clone()
                     }),
@@ -226,13 +230,7 @@ pub fn attendance_workbook_rows(session: &SpreadsheetSession) -> Vec<SheetRow> {
     let mut rows = vec![SheetRow { values: ["Player", "Status", "Event Points", "Score", "Rank"].iter().map(|h| s(h)).collect(), header: true, fill: None, kab: false }];
     for p in own_players(session) {
         rows.push(SheetRow {
-            values: vec![
-                Cell::S(p.player_name.clone()),
-                s("attended"),
-                num_or_empty(points_value(p)),
-                num_or_empty(score_value(p)),
-                if p.rank == 0 { Cell::E } else { Cell::N(p.rank as f64) },
-            ],
+            values: vec![Cell::S(p.player_name.clone()), s("attended"), num_or_empty(points_value(p)), num_or_empty(score_value(p)), if p.rank == 0 { Cell::E } else { Cell::N(p.rank as f64) }],
             header: false,
             fill: Some(OWN_COLOR),
             kab: false,
@@ -300,11 +298,7 @@ pub fn write_sheet(sheet: &mut Worksheet, rows: &[SheetRow]) -> Result<(), Strin
 
 pub fn build_xlsx(session: &SpreadsheetSession) -> Result<Vec<u8>, String> {
     let mut workbook = Workbook::new();
-    for (name, rows) in [
-        ("Summary", summary_workbook_rows(session)),
-        ("Results", result_workbook_rows(session)),
-        ("Attendance", attendance_workbook_rows(session)),
-    ] {
+    for (name, rows) in [("Summary", summary_workbook_rows(session)), ("Results", result_workbook_rows(session)), ("Attendance", attendance_workbook_rows(session))] {
         let sheet = workbook.add_worksheet();
         sheet.set_name(name).map_err(|e| e.to_string())?;
         write_sheet(sheet, &rows)?;
@@ -327,11 +321,7 @@ fn fods_row(values: &[Cell], style: &str) -> String {
 }
 
 fn fods_table(name: &str, rows: String) -> String {
-    format!(
-        "<table:table table:name=\"{}\">\n<table:table-column table:number-columns-repeated=\"12\" table:style-name=\"Column\"/>\n{}\n</table:table>",
-        escape_xml(&safe_sheet_name(name)),
-        rows
-    )
+    format!("<table:table table:name=\"{}\">\n<table:table-column table:number-columns-repeated=\"12\" table:style-name=\"Column\"/>\n{}\n</table:table>", escape_xml(&safe_sheet_name(name)), rows)
 }
 
 pub fn build_fods(session: &SpreadsheetSession) -> String {
@@ -363,11 +353,7 @@ pub fn build_fods(session: &SpreadsheetSession) -> String {
     for item in player_display_rows(session) {
         results.push(fods_row(&item.values, if item.own { "OwnCell" } else { "OpponentCell" }));
     }
-    let attendance: String = attendance_workbook_rows(session)
-        .iter()
-        .map(|r| fods_row(&r.values, if r.header { "HeaderCell" } else { "Cell" }))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let attendance: String = attendance_workbook_rows(session).iter().map(|r| fods_row(&r.values, if r.header { "HeaderCell" } else { "Cell" })).collect::<Vec<_>>().join("\n");
 
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\" xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\" office:version=\"1.2\">\n<office:automatic-styles>\n<style:style style:name=\"Column\" style:family=\"table-column\"><style:table-column-properties style:column-width=\"1.35in\"/></style:style>\n<style:style style:name=\"Cell\" style:family=\"table-cell\"><style:table-cell-properties fo:border=\"0.5pt solid #d1d5db\" fo:padding=\"0.03in\"/><style:text-properties fo:font-size=\"10pt\"/></style:style>\n<style:style style:name=\"HeaderCell\" style:family=\"table-cell\"><style:table-cell-properties fo:background-color=\"{HEADER_COLOR}\" fo:border=\"0.5pt solid #111827\" fo:padding=\"0.04in\"/><style:text-properties fo:color=\"#ffffff\" fo:font-weight=\"bold\" fo:font-size=\"10pt\"/></style:style>\n<style:style style:name=\"OwnCell\" style:family=\"table-cell\"><style:table-cell-properties fo:background-color=\"{OWN_COLOR}\" fo:border=\"0.5pt solid #d6b656\" fo:padding=\"0.03in\"/><style:text-properties fo:font-size=\"10pt\"/></style:style>\n<style:style style:name=\"OpponentCell\" style:family=\"table-cell\"><style:table-cell-properties fo:background-color=\"{OPPONENT_COLOR}\" fo:border=\"0.5pt solid #6ea8fe\" fo:padding=\"0.03in\"/><style:text-properties fo:font-size=\"10pt\"/></style:style>\n</office:automatic-styles>\n<office:body>\n<office:spreadsheet>\n{}\n{}\n{}\n</office:spreadsheet>\n</office:body>\n</office:document>",
@@ -417,10 +403,7 @@ pub fn build_chart_svg(session: &SpreadsheetSession) -> String {
     let buckets = &session.stats.buckets;
     let matchup = format!("{} vs {}", sm.team_name, sm.opponent_teams.join(", "));
     let pills = header_stat_pills(
-        &[
-            Pill { label: "Drivers", value: sm.own_players.to_string(), width: 92, max_length: 18 },
-            Pill { label: "KAB", value: sm.kab_count.to_string(), width: 70, max_length: 18 },
-        ],
+        &[Pill { label: "Drivers", value: sm.own_players.to_string(), width: 92, max_length: 18 }, Pill { label: "KAB", value: sm.kab_count.to_string(), width: 70, max_length: 18 }],
         970,
         25,
         8,
@@ -433,7 +416,12 @@ pub fn build_chart_svg(session: &SpreadsheetSession) -> String {
     }
     let groups = [
         Group { title: "Score", y: 126, max: 1.max(sm.own_score).max(sm.opponent_score), rows: [("Own score", sm.own_score, "#0f766e"), ("Enemy score", sm.opponent_score, "#2563eb")] },
-        Group { title: "Event points", y: 252, max: 1.max(sm.own_points).max(sm.opponent_points), rows: [("Own event pts", sm.own_points, "#d97706"), ("Enemy event pts", sm.opponent_points, "#7c3aed")] },
+        Group {
+            title: "Event points",
+            y: 252,
+            max: 1.max(sm.own_points).max(sm.opponent_points),
+            rows: [("Own event pts", sm.own_points, "#d97706"), ("Enemy event pts", sm.opponent_points, "#7c3aed")],
+        },
     ];
     let (width, height, chart_x, chart_width, row_height) = (1180i64, 670i64, 230i64, 720i64, 42i64);
     let mut bar_rows = Vec::new();
@@ -564,18 +552,47 @@ pub fn build_spreadsheet_image_svg(session: &SpreadsheetSession) -> String {
         for (row_index, item) in rows.iter().enumerate() {
             let y = title_height + row_height * (row_index as u32 + 1);
             let kab_value = item.values[8].number();
-            let base_fill = if kab_value > 0.0 { "#fef3c7" } else if row_index % 2 == 0 { "#fffbeb" } else { "#f8fafc" };
+            let base_fill = if kab_value > 0.0 {
+                "#fef3c7"
+            } else if row_index % 2 == 0 {
+                "#fffbeb"
+            } else {
+                "#f8fafc"
+            };
             let mut cell_x = margin;
             for column in &columns {
-                let text = preview_text(&item.values[column.index].text(), if column.max_length > 0 { column.max_length } else if column.width > 180 { 30 } else { 16 });
+                let text = preview_text(
+                    &item.values[column.index].text(),
+                    if column.max_length > 0 {
+                        column.max_length
+                    } else if column.width > 180 {
+                        30
+                    } else {
+                        16
+                    },
+                );
                 let fill = match &column.kind {
                     ColKind::Rank => {
                         let rank = item.values[0].number() as u32;
-                        if rank == 1 { "#fde68a" } else if rank <= 3 && rank > 0 { "#e0f2fe" } else if rank <= 10 && rank > 0 { "#dcfce7" } else { base_fill }
+                        if rank == 1 {
+                            "#fde68a"
+                        } else if rank <= 3 && rank > 0 {
+                            "#e0f2fe"
+                        } else if rank <= 10 && rank > 0 {
+                            "#dcfce7"
+                        } else {
+                            base_fill
+                        }
                     }
                     ColKind::Plain => base_fill,
                     ColKind::Fill(c) => c,
-                    ColKind::Kab => if kab_value > 0.0 { KAB_COLOR } else { "#fce7f3" },
+                    ColKind::Kab => {
+                        if kab_value > 0.0 {
+                            KAB_COLOR
+                        } else {
+                            "#fce7f3"
+                        }
+                    }
                 };
                 let text_color = if column.kind == ColKind::Kab && kab_value > 0.0 { "#ffffff" } else { "#111827" };
                 let (anchor, text_x) = if column.center { ("middle", cell_x + column.width / 2) } else { ("start", cell_x + 10) };

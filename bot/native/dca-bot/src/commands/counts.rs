@@ -17,7 +17,11 @@ fn guard(r: &Responder) -> bool {
 async fn announce_sync(app: &App, r: &Responder, saved_prefix: bool) -> BotResult<()> {
     let sync = sync_member_count_message(app, false, "").await;
     let content = if sync.skipped {
-        if saved_prefix { format!("Saved, but sync skipped: {}", sync.reason) } else { format!("Skipped: {}", sync.reason) }
+        if saved_prefix {
+            format!("Saved, but sync skipped: {}", sync.reason)
+        } else {
+            format!("Skipped: {}", sync.reason)
+        }
     } else if saved_prefix {
         format!("Saved and updated <#{}>.", sync.channel_id)
     } else {
@@ -58,10 +62,14 @@ pub async fn slash_membercount(app: &App, r: &Responder, cmd: &CommandInteractio
             .await?;
             log_action(
                 app,
-                LogEntry::new("memberCount", "Member Count Edited", format!("<@{}> set **{}** to **{players}** players{}.", r.user().id, team.name, status.map(|s| format!(", {s}")).unwrap_or_default()))
-                    .guild(cmd.guild_id.map(|g| g.to_string()).unwrap_or_default())
-                    .actor(r.user().id, display_tag(r.user()))
-                    .meta(json!({ "teamId": team.id, "players": players, "status": status.unwrap_or("") })),
+                LogEntry::new(
+                    "memberCount",
+                    "Member Count Edited",
+                    format!("<@{}> set **{}** to **{players}** players{}.", r.user().id, team.name, status.map(|s| format!(", {s}")).unwrap_or_default()),
+                )
+                .guild(cmd.guild_id.map(|g| g.to_string()).unwrap_or_default())
+                .actor(r.user().id, display_tag(r.user()))
+                .meta(json!({ "teamId": team.id, "players": players, "status": status.unwrap_or("") })),
             )
             .await;
             announce_sync(app, r, true).await

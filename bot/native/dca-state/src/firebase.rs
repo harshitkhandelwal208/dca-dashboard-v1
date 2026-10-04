@@ -15,7 +15,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-const TOKEN_SCOPES: &str = "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform";
+const TOKEN_SCOPES: &str =
+    "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform";
 
 #[derive(Clone, Debug, Deserialize)]
 struct ServiceAccount {
@@ -82,8 +83,7 @@ fn parse_service_account() -> Result<Option<ServiceAccount>, String> {
     match raw {
         None => Ok(None),
         Some(text) => {
-            let mut account: ServiceAccount =
-                serde_json::from_str(&text).map_err(|e| format!("invalid service account JSON: {e}"))?;
+            let mut account: ServiceAccount = serde_json::from_str(&text).map_err(|e| format!("invalid service account JSON: {e}"))?;
             // Keys pasted through env dashboards frequently carry literal "\n" sequences.
             account.private_key = account.private_key.replace("\\n", "\n");
             Ok(Some(account))
@@ -94,9 +94,7 @@ fn parse_service_account() -> Result<Option<ServiceAccount>, String> {
 impl Firebase {
     pub fn from_env() -> Result<Firebase, String> {
         let account = parse_service_account()?;
-        let project_id = env_nonempty("FIREBASE_PROJECT_ID")
-            .or_else(|| account.as_ref().map(|a| a.project_id.clone()).filter(|p| !p.is_empty()))
-            .unwrap_or_default();
+        let project_id = env_nonempty("FIREBASE_PROJECT_ID").or_else(|| account.as_ref().map(|a| a.project_id.clone()).filter(|p| !p.is_empty())).unwrap_or_default();
 
         let forced = env_nonempty("FIREBASE_DATABASE_TYPE").unwrap_or_default().to_lowercase();
         let database_url = env_nonempty("FIREBASE_DATABASE_URL").unwrap_or_default();
@@ -121,10 +119,7 @@ impl Firebase {
         let root = env_nonempty("FIREBASE_STATE_ROOT").unwrap_or_else(|| collection.clone());
 
         Ok(Firebase {
-            http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .build()
-                .map_err(|e| e.to_string())?,
+            http: reqwest::Client::builder().timeout(Duration::from_secs(30)).build().map_err(|e| e.to_string())?,
             account: account.map(Arc::new),
             token: Arc::new(Mutex::new(None)),
             kind,
@@ -147,10 +142,7 @@ impl Firebase {
             Some(account) => self.exchange_service_account(account).await?,
             None => self.metadata_token().await?,
         };
-        *guard = Some(CachedToken {
-            value: value.clone(),
-            expires_at: Instant::now() + Duration::from_secs(ttl.max(120)),
-        });
+        *guard = Some(CachedToken { value: value.clone(), expires_at: Instant::now() + Duration::from_secs(ttl.max(120)) });
         Ok(value)
     }
 
@@ -164,10 +156,8 @@ impl Firebase {
             "iat": now,
             "exp": now + 3600,
         });
-        let key = jsonwebtoken::EncodingKey::from_rsa_pem(account.private_key.as_bytes())
-            .map_err(|e| format!("service account private key is not valid RSA PEM: {e}"))?;
-        let assertion = jsonwebtoken::encode(&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256), &claims, &key)
-            .map_err(|e| format!("could not sign the Google token request: {e}"))?;
+        let key = jsonwebtoken::EncodingKey::from_rsa_pem(account.private_key.as_bytes()).map_err(|e| format!("service account private key is not valid RSA PEM: {e}"))?;
+        let assertion = jsonwebtoken::encode(&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256), &claims, &key).map_err(|e| format!("could not sign the Google token request: {e}"))?;
 
         let response = self
             .http
@@ -200,12 +190,7 @@ impl Firebase {
     }
 
     fn firestore_url(&self, scope: &str) -> String {
-        format!(
-            "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents/{}/{}",
-            self.project_id,
-            urlencode(&self.collection),
-            urlencode(scope)
-        )
+        format!("https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents/{}/{}", self.project_id, urlencode(&self.collection), urlencode(scope))
     }
 
     fn realtime_url(&self, scope: &str) -> String {
@@ -217,13 +202,7 @@ impl Firebase {
         let token = self.access_token().await?;
         match self.kind {
             DatabaseKind::Firestore => {
-                let response = self
-                    .http
-                    .get(self.firestore_url(scope))
-                    .bearer_auth(&token)
-                    .send()
-                    .await
-                    .map_err(|e| format!("Firestore read failed: {e}"))?;
+                let response = self.http.get(self.firestore_url(scope)).bearer_auth(&token).send().await.map_err(|e| format!("Firestore read failed: {e}"))?;
                 if response.status().as_u16() == 404 {
                     return Ok(None);
                 }
@@ -235,13 +214,7 @@ impl Firebase {
                 Ok(body["fields"]["data"].as_object().map(|_| from_firestore(&body["fields"]["data"])))
             }
             DatabaseKind::Realtime => {
-                let response = self
-                    .http
-                    .get(self.realtime_url(scope))
-                    .bearer_auth(&token)
-                    .send()
-                    .await
-                    .map_err(|e| format!("Realtime Database read failed: {e}"))?;
+                let response = self.http.get(self.realtime_url(scope)).bearer_auth(&token).send().await.map_err(|e| format!("Realtime Database read failed: {e}"))?;
                 let status = response.status();
                 let body: Value = response.json().await.map_err(|e| e.to_string())?;
                 if !status.is_success() {
@@ -354,7 +327,7 @@ pub fn from_firestore(value: &Value) -> Value {
     }
     if let Some(d) = object.get("doubleValue") {
         return match d {
-            Value::String(text) => text.parse::<f64>().ok().and_then(|f| serde_json::Number::from_f64(f)).map(Value::Number).unwrap_or(Value::Null),
+            Value::String(text) => text.parse::<f64>().ok().and_then(serde_json::Number::from_f64).map(Value::Number).unwrap_or(Value::Null),
             other => other.clone(),
         };
     }
@@ -365,9 +338,7 @@ pub fn from_firestore(value: &Value) -> Value {
         return Value::Null;
     }
     if let Some(array) = object.get("arrayValue") {
-        return Value::Array(
-            array["values"].as_array().map(|items| items.iter().map(from_firestore).collect()).unwrap_or_default(),
-        );
+        return Value::Array(array["values"].as_array().map(|items| items.iter().map(from_firestore).collect()).unwrap_or_default());
     }
     if let Some(map) = object.get("mapValue") {
         let mut out = Map::new();

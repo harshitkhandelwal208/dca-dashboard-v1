@@ -52,17 +52,6 @@ pub fn user_id(value: &str) -> Option<UserId> {
     snowflake(value).map(UserId::new)
 }
 
-fn mention_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"<@!?(\d{10,25})>|(\d{17,25})").unwrap())
-}
-
-/// First user id found in a mention (`<@123>`) or a bare id.
-pub fn first_user_mention(text: &str) -> Option<UserId> {
-    let caps = mention_re().captures(text)?;
-    caps.get(1).or_else(|| caps.get(2)).and_then(|m| m.as_str().parse().ok()).map(UserId::new)
-}
-
 pub fn all_ids(text: &str) -> Vec<u64> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"\d{10,25}").unwrap());
@@ -80,9 +69,7 @@ pub fn all_ids(text: &str) -> Vec<u64> {
 /// Port of the `ms` package for the formats the bot accepted ("10m", "1h", "2 days", "1.5h", "5000").
 pub fn parse_duration_ms(input: &str) -> Option<u64> {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"(?i)^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$").unwrap()
-    });
+    let re = RE.get_or_init(|| Regex::new(r"(?i)^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$").unwrap());
     let caps = re.captures(input.trim())?;
     let n: f64 = caps.get(1)?.as_str().parse().ok()?;
     let unit = caps.get(2).map(|u| u.as_str().to_lowercase()).unwrap_or_else(|| "ms".into());
@@ -116,10 +103,7 @@ pub fn discord_timestamp(ms: i64, style: char) -> String {
 }
 
 pub fn safe_name(value: &str, fallback: &str, max: usize) -> String {
-    let cleaned: String = value
-        .chars()
-        .map(|c| if matches!(c, '/' | '\\' | '?' | '%' | '*' | ':' | '|' | '"' | '<' | '>') { '-' } else { c })
-        .collect();
+    let cleaned: String = value.chars().map(|c| if matches!(c, '/' | '\\' | '?' | '%' | '*' | ':' | '|' | '"' | '<' | '>') { '-' } else { c }).collect();
     let dashed = cleaned.split_whitespace().collect::<Vec<_>>().join("-");
     let trimmed = dashed.trim_matches('-');
     let out = truncate(trimmed, max);
@@ -137,11 +121,6 @@ pub fn is_image_attachment(a: &Attachment) -> bool {
     }
     let name = a.filename.to_lowercase();
     [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"].iter().any(|ext| name.ends_with(ext) || a.url.to_lowercase().split('?').next().unwrap_or("").ends_with(ext))
-}
-
-/// `Date.toISOString()` for a serenity timestamp.
-pub fn iso(ts: &Timestamp) -> String {
-    ts.to_string()
 }
 
 pub fn embed_color(color: &str) -> Colour {

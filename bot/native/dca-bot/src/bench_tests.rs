@@ -58,7 +58,9 @@ async fn bench() {
     let podium = std::fs::read(bot.join(SAMPLES[4])).unwrap();
     let licence2 = std::fs::read(bot.join("fixtures/samples/Screenshot_20260926_102543.jpg")).unwrap();
 
-    for (name, bytes) in [("licence (guide)", &licence), ("licence (sample 2)", &licence2), ("team-event screen (full)", &event), ("standings page (cropped, 28 rows)", &page), ("result/podium screen", &podium)] {
+    for (name, bytes) in
+        [("licence (guide)", &licence), ("licence (sample 2)", &licence2), ("team-event screen (full)", &event), ("standings page (cropped, 28 rows)", &page), ("result/podium screen", &podium)]
+    {
         let kind = timed(&mut stages, &format!("instant check: {name}"), || reader.classify_quick(bytes, &cancel).unwrap());
         assert_ne!(format!("{kind:?}"), "Unknown", "{name}");
     }
@@ -78,7 +80,13 @@ async fn bench() {
     let config = rig.app.config().await;
     let started = (Instant::now(), cpu_seconds());
     let checks = classify(&rig.app, &inputs, &config).await.unwrap();
-    stages.push(Stage { name: "applicant upload check (licence + event screenshot)".into(), wall: started.0.elapsed().as_secs_f64(), cpu: cpu_seconds() - started.1, rss: status_kb("VmRSS:"), peak: status_kb("VmHWM:") });
+    stages.push(Stage {
+        name: "applicant upload check (licence + event screenshot)".into(),
+        wall: started.0.elapsed().as_secs_f64(),
+        cpu: cpu_seconds() - started.1,
+        rss: status_kb("VmRSS:"),
+        peak: status_kb("VmHWM:"),
+    });
     assert!(checks.iter().all(|c| c.kind != crate::managers::recruitment::vision::ImageKind::Unknown));
     drop(rig);
 
@@ -88,11 +96,23 @@ async fn bench() {
     let sessions = dca_state::stores::list_sessions(&rig.app.store, &Default::default()).await;
     let started = (Instant::now(), cpu_seconds());
     let processed = process_spreadsheet_session(&rig.app, &sessions[0].id, ProcessOptions { rerun_ocr: false }).await.unwrap();
-    stages.push(Stage { name: "spreadsheet: 5 screenshots -> 96 players, xlsx + 2 images".into(), wall: started.0.elapsed().as_secs_f64(), cpu: cpu_seconds() - started.1, rss: status_kb("VmRSS:"), peak: status_kb("VmHWM:") });
+    stages.push(Stage {
+        name: "spreadsheet: 5 screenshots -> 96 players, xlsx + 2 images".into(),
+        wall: started.0.elapsed().as_secs_f64(),
+        cpu: cpu_seconds() - started.1,
+        rss: status_kb("VmRSS:"),
+        peak: status_kb("VmHWM:"),
+    });
     assert_eq!(processed.players.len(), 96);
     let started = (Instant::now(), cpu_seconds());
     crate::managers::spreadsheet::rebuild_spreadsheet_session(&rig.app, &sessions[0].id).await.unwrap();
-    stages.push(Stage { name: "spreadsheet: rebuild outputs from stored readings".into(), wall: started.0.elapsed().as_secs_f64(), cpu: cpu_seconds() - started.1, rss: status_kb("VmRSS:"), peak: status_kb("VmHWM:") });
+    stages.push(Stage {
+        name: "spreadsheet: rebuild outputs from stored readings".into(),
+        wall: started.0.elapsed().as_secs_f64(),
+        cpu: cpu_seconds() - started.1,
+        rss: status_kb("VmRSS:"),
+        peak: status_kb("VmHWM:"),
+    });
 
     println!("\n=== benchmark ({} usable CPU thread(s)) ===", threads);
     println!("{:<62} {:>9} {:>9} {:>9} {:>9}", "stage", "wall (s)", "cpu (s)", "RSS", "peak");
