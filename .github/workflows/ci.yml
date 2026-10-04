@@ -18,6 +18,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake pkg-config fontconfig fonts-noto-core
       - name: OCR models (the end-to-end tests use them)
         run: sh bot/scripts/download-models.sh
+      - name: Deploy scripts (shellcheck and the updater's sandbox test)
+        run: shellcheck -S style deploy/aws/*.sh bot/scripts/*.sh && deploy/aws/test-autoupdate.sh
       - name: Formatting
         working-directory: bot/native
         run: cargo fmt --all --check
