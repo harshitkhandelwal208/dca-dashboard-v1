@@ -11,13 +11,18 @@ UPDATE="${DCA_UPDATE_CMD:-/usr/local/bin/dca-update}"
 HEALTH="${DCA_HEALTH_URL:-http://127.0.0.1:3000/health}"
 TRIES="${DCA_HEALTH_TRIES:-24}"
 PAUSE="${DCA_HEALTH_PAUSE:-5}"
+RELEASE_API="${DCA_RELEASE_API:-https://api.github.com/repos/${REPO}/releases/tags/rolling}"
 PREV="$ROOT/prev"
 mkdir -p "$STATE"
 exec 9>"$LOCK"
 flock -n 9 || exit 0
 
-LATEST="$(curl -fsS -m 20 "${DCA_VERSION_URL:-https://github.com/${REPO}/releases/download/rolling/VERSION}" 2>/dev/null | awk '{print $1; exit}')"
-[ -n "$LATEST" ] || exit 0
+# The release notes hold "<commit> <time>" of the newest build. The API is read instead of the download link, which GitHub
+# caches for several minutes.
+LATEST="$(curl -fsS -m 20 -H 'Accept: application/vnd.github+json' "$RELEASE_API" 2>/dev/null |
+  python3 -c 'import sys, json; print(json.load(sys.stdin)["body"].split()[0])' 2>/dev/null || true)"
+# Anything that is not a commit id (the notes before the first build, an error page) means there is nothing to install.
+[[ "$LATEST" =~ ^[0-9a-f]{7,40}$ ]] || exit 0
 CURRENT="$(awk '{print $1; exit}' "$ROOT/VERSION" 2>/dev/null || true)"
 [ "$LATEST" = "$CURRENT" ] && exit 0
 # A build that failed its health check is not tried again; the next commit gets a fresh chance.

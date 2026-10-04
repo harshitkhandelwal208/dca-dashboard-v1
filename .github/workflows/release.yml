@@ -53,5 +53,7 @@ jobs:
         run: |
           gh release view rolling >/dev/null 2>&1 || gh release create rolling --prerelease --title "Rolling build" --notes "Latest build of main (installed by deploy/aws/update.sh)."
           gh release upload rolling dca-bot-linux-x86_64.tar.gz --clobber
-          # The version marker goes last: the server installs when it changes, so the build must already be there.
+          # The version marker goes last: the server installs when it changes, so the build must already be there. It is
+          # the release's notes (read through the API, which is never cached); the VERSION file is kept for older servers.
           gh release upload rolling VERSION --clobber
+          gh release edit rolling --notes "$(cat VERSION)"
