@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bot/native
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config fontconfig fonts-noto-core
+      - name: OCR models (the end-to-end tests use them)
+        run: sh bot/scripts/download-models.sh
+      - name: Tests
+        working-directory: bot/native
+        run: cargo test --workspace
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Dashboard builds
+        working-directory: dashboard
+        run: npm ci && npm run build

@@ -1,0 +1,15 @@
+# DCA Bot - pure Rust workspace
+#
+#   dca-bot    Discord bot, recruitment, spreadsheets and the web dashboard (API + OAuth)
+#   dca-core   Local vision/OCR, standings reading, spreadsheet/report export and image rendering
+#   dca-state  Persistent state: Firebase (Firestore / Realtime Database) with a local JSON fallback
+
+[workspace]
+members = ["dca-core", "dca-state", "dca-bot"]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

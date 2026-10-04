@@ -1,0 +1,12 @@
+**/node_modules
+**/target
+bot/native/target
+bot/native/bin
+bot/models
+bot/data
+dashboard/dist
+.git
+*.log
+.env
+**/.env
+.DS_Store

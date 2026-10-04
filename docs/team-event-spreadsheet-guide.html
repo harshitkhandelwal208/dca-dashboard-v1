@@ -457,7 +457,7 @@
       <div class="cover-grid">
         <div class="cover-card"><strong>For Players</strong><span>How to submit screenshots cleanly and understand the images the bot posts.</span></div>
         <div class="cover-card"><strong>For Staff</strong><span>How to fix names, teams, placements, points, scores, and report periods.</span></div>
-        <div class="cover-card"><strong>For Admins</strong><span>How monitored channels, output channels, access roles, and Gemini settings work.</span></div>
+        <div class="cover-card"><strong>For Admins</strong><span>How monitored channels, output channels, access roles, and the grouping window work.</span></div>
         <div class="cover-card"><strong>For Reports</strong><span>How blue kills, KAB, missed events, weekly tables, and monthly rollups are calculated.</span></div>
       </div>
     </div>
@@ -472,7 +472,7 @@
       </div>
       <div class="toc">
         <div class="toc-item"><strong>1. System Overview</strong><span>What the bot extracts and which files it produces.</span></div>
-        <div class="toc-item"><strong>2. Setup Requirements</strong><span>Channels, access roles, team aliases, roster aliases, and Gemini settings.</span></div>
+        <div class="toc-item"><strong>2. Setup Requirements</strong><span>Channels, access roles, team aliases, roster aliases, and the grouping window.</span></div>
         <div class="toc-item"><strong>3. Screenshot Submission</strong><span>How users should post images for best results.</span></div>
         <div class="toc-item"><strong>4. Event Outputs</strong><span>XLSX files, spreadsheet images, summary charts, and session summaries.</span></div>
         <div class="toc-item"><strong>5. Weekly Reports</strong><span>Blue-kill grids, enemy team columns, event counts, total kills, max kills, and KAB.</span></div>
@@ -484,11 +484,11 @@
       </div>
 
       <h2 style="margin-top:18px;">1. System Overview</h2>
-      <p>The team-event spreadsheet system converts Hill Climb Racing 2 team-event screenshots into structured Discord reports. A user posts one or more screenshots in a configured monitored channel. The bot groups the images into a session, sends them through Gemini Flash, parses the event data, applies staff corrections if any exist, and generates files.</p>
+      <p>The team-event spreadsheet system converts Hill Climb Racing 2 team-event screenshots into structured Discord reports. A user posts one or more screenshots in a configured monitored channel. The bot reacts at once, posts a status message that keeps itself up to date, reads each screenshot with free local OCR as it arrives, groups the images into a session, applies staff corrections if any exist, and generates files shortly after the last screenshot (or immediately when someone presses Generate now).</p>
 
       <div class="grid-3">
         <div class="card teal"><h3>Input</h3><p>Team-event screenshots, including standings, podium screens, score summaries, and ranking lists.</p></div>
-        <div class="card blue"><h3>Processing</h3><p>Gemini extracts ranks, names, scores, event points, team labels, team scores, and visible metadata.</p></div>
+        <div class="card blue"><h3>Processing</h3><p>Free local OCR reads ranks, names, scores, event title and team points. Yellow rows are the own team, blue rows are opponents.</p></div>
         <div class="card amber"><h3>Output</h3><p>The bot posts an XLSX workbook, a spreadsheet-style image, a chart image, and period reports.</p></div>
       </div>
 
@@ -509,10 +509,10 @@
       <div class="definition"><strong>Monitored channel</strong><span>The Discord channel where users post event screenshots. Only images in this channel are captured for that team.</span></div>
       <div class="definition"><strong>Output channel</strong><span>The channel where final files and automatic reports are posted. If not set, output falls back to the submission channel for some flows.</span></div>
       <div class="definition"><strong>Access role</strong><span>Members with this role can use spreadsheet commands for the team. Server administrators always have access.</span></div>
-      <div class="definition"><strong>Own team aliases</strong><span>Names Gemini may see for the configured team. These help classify rows as own-team rows.</span></div>
+      <div class="definition"><strong>Own team aliases</strong><span>Names the configured team may appear under, for recognising it.</span></div>
       <div class="definition"><strong>Own player aliases</strong><span>Known player names that should be treated as own-team players even if the screenshot row is ambiguous.</span></div>
       <div class="definition"><strong>Auto process</strong><span>When enabled, the bot automatically processes the session after the grouping window ends.</span></div>
-      <div class="definition"><strong>Grouping window</strong><span>The number of minutes during which images from the same user and channel are grouped into one pending session.</span></div>
+      <div class="definition"><strong>Grouping window</strong><span>The number of seconds after the last screenshot during which more images from the same user and channel are added to the same pending session.</span></div>
 
       <h2 style="margin-top:16px;">Recommended Admin Defaults</h2>
       <table class="sample-table">
@@ -520,9 +520,8 @@
         <tbody>
           <tr><td>Session window</td><td>1 minute</td><td>Keeps separate event submissions from merging accidentally.</td></tr>
           <tr><td>Output format</td><td>XLSX</td><td>Best for staff editing, archiving, and sharing.</td></tr>
-          <tr><td>Gemini model</td><td>gemini-2.5-flash</td><td>Fast structured extraction for screenshot batches.</td></tr>
-          <tr><td>Timeout</td><td>300 seconds</td><td>Allows larger screenshot groups to finish.</td></tr>
-          <tr><td>Retries</td><td>4</td><td>Handles temporary API failures or rate limits.</td></tr>
+          <tr><td>Wait after the last screenshot</td><td>20 seconds</td><td>Screenshots are read as they arrive, so this is the only waiting. Generate now skips it.</td></tr>
+          <tr><td>Live status message</td><td>On</td><td>Shows what was read, what is missing, and when the spreadsheet will be built.</td></tr>
           <tr><td>Raw data retention</td><td>31 days</td><td>Keeps audit data temporarily without storing it forever.</td></tr>
           <tr><td>Local image retention</td><td>7 days</td><td>Bounds any generated image leftovers that were not removed immediately after upload.</td></tr>
         </tbody>
@@ -544,9 +543,9 @@
       <div class="workflow">
         <div class="step"><div><h3>Post in the monitored channel</h3><p>Only screenshots posted in the configured monitored channel are captured. Screenshots posted elsewhere are ignored by the spreadsheet system.</p></div></div>
         <div class="step"><div><h3>Use one Discord user per submission</h3><p>The grouping logic groups images by user and channel. If multiple users post parts of the same event, the bot may create separate sessions.</p></div></div>
-        <div class="step"><div><h3>Post all event screenshots close together</h3><p>Images sent within the grouping window are appended to the same pending session. Waiting too long can split the event into multiple sessions.</p></div></div>
+        <div class="step"><div><h3>Post all event screenshots close together</h3><p>Images sent within the grouping window are appended to the same pending session. A forgotten page sent a few minutes later is merged into the earlier spreadsheet automatically.</p></div></div>
         <div class="step"><div><h3>Include useful screens</h3><p>Best results usually come from final standings, team score summaries, podium screens, and clear rank/player/score rows.</p></div></div>
-        <div class="step"><div><h3>Wait for processing</h3><p>If auto-process is enabled, the bot runs after the grouping timer ends. Otherwise, staff can run <code>/spreadsheets generate</code>.</p></div></div>
+        <div class="step"><div><h3>Wait for processing</h3><p>Watch the status message: it shows which screenshots were read, warns about missing ranks or unusable screenshots, and builds the spreadsheet after the grouping window, as soon as the whole standings are covered, or when you press <strong>Generate now</strong>.</p></div></div>
       </div>
 
       <h2 style="margin-top:18px;">Screenshot Quality Checklist</h2>
@@ -671,13 +670,13 @@
       </div>
 
       <h2>Status and Session Commands</h2>
-      <div class="command"><code>/spreadsheets status team:&lt;team&gt;</code><p>Shows team setup, monitored/output channels, access role, grouping window, Gemini settings, retention, output format, and session counts.</p></div>
+      <div class="command"><code>/spreadsheets status team:&lt;team&gt;</code><p>Shows team setup, monitored/output channels, access role, grouping window, live status, retention, output format, and session counts.</p></div>
       <div class="command"><code>/spreadsheets sessions team:&lt;team&gt;</code><p>Lists the 10 most recent spreadsheet sessions for that team.</p></div>
       <div class="command"><code>/spreadsheets summary team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Shows parsed summary text for a pending, failed, or processed session.</p></div>
 
       <h2>Generation and Files</h2>
       <div class="command"><code>/spreadsheets generate team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Processes or refreshes a screenshot session. If no session ID is given, it uses the latest matching session.</p></div>
-      <div class="command"><code>/spreadsheets generate team:&lt;team&gt; rerun_gemini:true</code><p>Downloads the source images and runs Gemini extraction again.</p></div>
+      <div class="command"><code>/spreadsheets generate team:&lt;team&gt; rerun_ocr:true</code><p>Downloads the source images and reads them again instead of using the saved readings.</p></div>
       <div class="command"><code>/spreadsheets file team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Returns the generated XLSX or FODS spreadsheet file.</p></div>
       <div class="command"><code>/spreadsheets chart team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Returns the generated summary chart image.</p></div>
 
@@ -702,7 +701,7 @@
       <div class="command"><code>/spreadsheets correct-placement team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; placement:&lt;new rank&gt;</code><p>Corrects the placement/rank for a row.</p></div>
       <div class="command"><code>/spreadsheets correct-points team:&lt;team&gt; session_id:&lt;id&gt; row:&lt;rank&gt; field:Score value:&lt;score&gt;</code><p>Corrects either score or event points.</p></div>
       <div class="command"><code>/spreadsheets correct-event-name team:&lt;team&gt; session_id:&lt;id&gt; value:&lt;event name&gt;</code><p>Corrects the event title used in files and reports.</p></div>
-      <div class="command"><code>/spreadsheets rebuild team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Rebuilds output files from existing parsed Gemini data and stored corrections.</p></div>
+      <div class="command"><code>/spreadsheets rebuild team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Rebuilds output files from the saved readings and stored corrections.</p></div>
 
       <div class="callout warning">
         <strong>Correction targeting:</strong> correction commands use the visible placement/rank row where possible. If no matching rank is found, the code falls back to row order. Always check the summary after correcting.
@@ -722,7 +721,7 @@
       </div>
 
       <h2>Temporary Diagnostic Commands</h2>
-      <div class="command"><code>/spreadsheets test-gemini team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Runs Gemini extraction for a pending, processed, or failed session and returns a preview.</p></div>
+      <div class="command"><code>/spreadsheets test-ocr team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Reads a pending, processed, or failed session's screenshots again and returns a preview.</p></div>
       <div class="command"><code>/spreadsheets test-grouping team:&lt;team&gt;</code><p>Shows pending sessions and grouping-window state.</p></div>
       <div class="command"><code>/spreadsheets preview team:&lt;team&gt; session_id:&lt;id&gt;</code><p>Shows parsed output without posting final files.</p></div>
       <div class="command"><code>/spreadsheets force-weekly team:&lt;team&gt;</code><p>Forces weekly report posting.</p></div>
@@ -736,7 +735,7 @@
           <tr><td>No session appears</td><td>Wrong channel, disabled team, or no image attachments</td><td>Check <code>/spreadsheets status</code> and monitored channel config.</td></tr>
           <tr><td>Images split into multiple sessions</td><td>Posted after grouping window or from different users</td><td>Use <code>test-grouping</code>, then generate the correct session manually.</td></tr>
           <tr><td>Bad player/team classification</td><td>Ambiguous screenshot row or missing aliases</td><td>Use <code>correct-team</code> and update aliases for future events.</td></tr>
-          <tr><td>Bad event name</td><td>Gemini read title incorrectly</td><td>Use <code>correct-event-name</code>, then rebuild/report again.</td></tr>
+          <tr><td>Bad event name</td><td>The title was read incorrectly</td><td>Use <code>correct-event-name</code>, then rebuild/report again.</td></tr>
           <tr><td>No report posts</td><td>Missing output channel, no sessions, duplicate guard, or unavailable channel</td><td>Set output channel or use regenerate commands with the right anchor date.</td></tr>
           <tr><td>Enemy name includes scores</td><td>OCR merged team score text into the label</td><td>The cleaner strips own team and score fragments, but staff can still correct team labels if needed.</td></tr>
         </tbody>

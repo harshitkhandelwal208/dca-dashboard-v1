@@ -1,0 +1,7 @@
+native/target
+native/bin
+models
+data
+*.log
+.env
+.DS_Store

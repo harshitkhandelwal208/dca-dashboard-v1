@@ -1,0 +1,30 @@
+[Unit]
+Description=DCA Discord bot + dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=dca
+Group=dca
+WorkingDirectory=/opt/dca
+EnvironmentFile=/etc/dca/dca.env
+Environment=PORT=3000
+Environment=RUST_LOG=info,serenity=warn,ort=warn
+Environment=MALLOC_ARENA_MAX=1
+Environment=DCA_DATA_DIR=/opt/dca/data
+Environment=DCA_MODELS_DIR=/opt/dca/models
+Environment=DCA_FONTS_DIR=/opt/dca/fonts
+Environment=DCA_ASSETS_DIR=/opt/dca/assets
+Environment=DASHBOARD_DIST_DIR=/opt/dca/dashboard
+ExecStart=/opt/dca/bin/dca-bot
+Restart=always
+RestartSec=5
+# The OCR peaks around 450 MB; the bot reads this limit and recycles its OCR sessions well before reaching it.
+MemoryMax=720M
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

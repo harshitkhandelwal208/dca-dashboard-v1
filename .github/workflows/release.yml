@@ -1,0 +1,44 @@
+name: Release build
+# Builds the bot + dashboard on every push to main and publishes them as the rolling release that the server installs
+# with `sudo dca-update` (see deploy/aws/README.md).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bot/native
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config
+      - name: Build the bot
+        working-directory: bot/native
+        run: cargo build --release -p dca-bot
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build the dashboard
+        working-directory: dashboard
+        run: npm ci && npm run build
+      - name: Package
+        run: |
+          mkdir -p pkg/dca-bot
+          cp bot/native/target/release/dca-bot pkg/dca-bot/
+          cp -r dashboard/dist pkg/dca-bot/dashboard
+          cp -r bot/fonts pkg/dca-bot/fonts
+          cp -r bot/assets pkg/dca-bot/assets
+          echo "$(git rev-parse --short HEAD) $(date -u +%Y-%m-%dT%H:%MZ)" > pkg/dca-bot/VERSION
+          tar -czf dca-bot-linux-x86_64.tar.gz -C pkg dca-bot
+      - name: Publish the rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view rolling >/dev/null 2>&1 || gh release create rolling --prerelease --title "Rolling build" --notes "Latest build of main (installed by deploy/aws/update.sh)."
+          gh release upload rolling dca-bot-linux-x86_64.tar.gz --clobber

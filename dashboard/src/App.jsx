@@ -725,7 +725,6 @@ export default function App() {
                         <SelectField label="Tutorial upload channel" value={config.recruitment.tutorialUploadChannelId} onChange={value => patch("recruitment.tutorialUploadChannelId", value)} options={serverChannels} />
                         <SelectField label="Recruiter role" value={config.recruitment.recruiterRoleId} onChange={value => patch("recruitment.recruiterRoleId", value)} options={serverRoles} />
                         <Field label="Screenshot DM user ID"><TextInput value={config.recruitment.screenshotDmUserId || ""} onChange={event => patch("recruitment.screenshotDmUserId", event.target.value)} /></Field>
-                        <Field label="Recruitment Gemini API key"><TextInput type="password" value={config.recruitment.geminiApiKey || ""} onChange={event => patch("recruitment.geminiApiKey", event.target.value)} /></Field>
                         <Field label="Max open tickets"><TextInput type="number" min="1" max="10" value={config.recruitment.maxOpenTicketsPerUser} onChange={event => patch("recruitment.maxOpenTicketsPerUser", Number(event.target.value))} /></Field>
                         <Field label="Panel title"><TextInput value={config.recruitment.panelTitle} onChange={event => patch("recruitment.panelTitle", event.target.value)} /></Field>
                         <Field label="Panel color"><TextInput type="color" value={config.recruitment.panelColor} onChange={event => patch("recruitment.panelColor", event.target.value)} /></Field>
@@ -901,9 +900,6 @@ export default function App() {
             sessionWindowMinutes: 1,
             outputFormat: "xlsx",
             libreOfficePath: "",
-            geminiModel: "gemini-3.6-flash",
-            geminiTimeoutMs: 300000,
-            geminiMaxRetries: 4,
             rawDataRetentionDays: 31,
             imageRetentionDays: 7,
             teams: []
@@ -911,7 +907,7 @@ export default function App() {
 
         return (
             <div className="stack">
-                <SectionCard title="Spreadsheet Gemini Settings" icon={FileSpreadsheet}>
+                <SectionCard title="Spreadsheet Settings" icon={FileSpreadsheet}>
                     <div className="form-grid compact">
                         <Toggle label="Enabled" checked={Boolean(spreadsheets.enabled)} onChange={value => patch("spreadsheets.enabled", value)} />
                         <Field label="Grouping window">
@@ -923,10 +919,7 @@ export default function App() {
                                 <option value="fods">Flat ODS</option>
                             </select>
                         </Field>
-                        <Field label="LibreOffice path"><TextInput placeholder="Leave blank; Node writes XLSX" value={spreadsheets.libreOfficePath || ""} onChange={event => patch("spreadsheets.libreOfficePath", event.target.value)} /></Field>
-                        <Field label="Gemini Flash model"><TextInput value={spreadsheets.geminiModel || "gemini-3.6-flash"} onChange={event => patch("spreadsheets.geminiModel", event.target.value)} /></Field>
-                        <Field label="Gemini timeout ms"><TextInput type="number" min="30000" max="900000" value={spreadsheets.geminiTimeoutMs || 300000} onChange={event => patch("spreadsheets.geminiTimeoutMs", Number(event.target.value))} /></Field>
-                        <Field label="Gemini retries"><TextInput type="number" min="0" max="10" value={spreadsheets.geminiMaxRetries ?? 4} onChange={event => patch("spreadsheets.geminiMaxRetries", Number(event.target.value))} /></Field>
+                        <Field label="LibreOffice path"><TextInput placeholder="Leave blank; the bot writes XLSX itself" value={spreadsheets.libreOfficePath || ""} onChange={event => patch("spreadsheets.libreOfficePath", event.target.value)} /></Field>
                         <Field label="Raw data retention days"><TimeInput min="1" max="370" value={spreadsheets.rawDataRetentionDays || 31} onChange={event => patch("spreadsheets.rawDataRetentionDays", Number(event.target.value))} /></Field>
                         <Field label="Local image retention days"><TimeInput min="1" max="90" value={spreadsheets.imageRetentionDays || 7} onChange={event => patch("spreadsheets.imageRetentionDays", Number(event.target.value))} /></Field>
                     </div>
@@ -940,7 +933,6 @@ export default function App() {
                         monitoredChannelId: "",
                         outputChannelId: "",
                         accessRoleId: "",
-                        geminiApiKey: "",
                         ownTeamAliases: [],
                         ownPlayerAliases: [],
                         autoProcess: true
@@ -958,7 +950,6 @@ export default function App() {
                                 <SelectField label="Monitored channel" value={team.monitoredChannelId || ""} onChange={value => patchItem("spreadsheets.teams", index, { monitoredChannelId: value })} options={spreadsheetChannels} />
                                 <SelectField label="Output channel" value={team.outputChannelId || ""} onChange={value => patchItem("spreadsheets.teams", index, { outputChannelId: value })} options={spreadsheetChannels} placeholder="Submission channel" />
                                 <SelectField label="Team access role" value={team.accessRoleId || ""} onChange={value => patchItem("spreadsheets.teams", index, { accessRoleId: value })} options={spreadsheetRoles} placeholder="Admins only" />
-                                <Field label="Team Gemini API key"><TextInput type="password" value={team.geminiApiKey || ""} onChange={event => patchItem("spreadsheets.teams", index, { geminiApiKey: event.target.value })} /></Field>
                                 <Field label="Own team aliases"><TextInput value={(team.ownTeamAliases || []).join(", ")} onChange={event => patchItem("spreadsheets.teams", index, { ownTeamAliases: event.target.value.split(",").map(item => item.trim()).filter(Boolean) })} /></Field>
                                 <Field label="Known own players"><TextInput value={(team.ownPlayerAliases || []).join(", ")} onChange={event => patchItem("spreadsheets.teams", index, { ownPlayerAliases: event.target.value.split(",").map(item => item.trim()).filter(Boolean) })} /></Field>
                                 <Toggle label="Auto process" checked={team.autoProcess !== false} onChange={value => patchItem("spreadsheets.teams", index, { autoProcess: value })} />

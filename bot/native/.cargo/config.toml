@@ -1,0 +1,3 @@
+[env]
+# The bot's command handlers are deep async state machines; unoptimised test builds need more than the default 2 MB stack.
+RUST_MIN_STACK = "33554432"

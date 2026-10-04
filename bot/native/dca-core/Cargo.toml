@@ -1,0 +1,21 @@
+[package]
+name = "dca-core"
+version = "0.1.0"
+edition = "2021"
+# The old Tesseract linking script is no longer used (OCR is PaddleOCR on ONNX Runtime now).
+build = false
+
+[dependencies]
+dca-state = { path = "../dca-state" }
+oar-ocr = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+rust_xlsxwriter = "0.99"
+resvg = "0.45"
+ttf-parser = "0.25"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+unicode-normalization = "0.1"
+regex = "1.10"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+libc = "0.2"

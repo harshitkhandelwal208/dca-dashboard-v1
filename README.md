@@ -1,108 +1,74 @@
 # DCA Bot Suite
 
-DCA Bot Suite contains two deployable applications that share one Discord bot token and one state store:
+DCA Bot Suite is the Discord bot **and** its web dashboard for the Discord Drivers community, in one Rust process that shares one bot token and one state store:
 
-- `bot/` - the Discord bot runtime, slash commands, recruitment tickets, reaction roles, team counts, YouTube checks, Gemini spreadsheet generation, and automatic team-event reports.
-- `dashboard/` - the React and Express dashboard used to configure servers, channels, roles, tickets, member counts, feeds, spreadsheets, and bot logging.
+- `bot/native/` - the Rust workspace: the Discord bot (slash and `-` commands, recruitment tickets, reaction roles, team counts, YouTube checks, team-event spreadsheets and reports), the dashboard API with Discord sign-in, and the **local PaddleOCR** screenshot reader.
+- `dashboard/` - the React dashboard used to configure servers, channels, roles, tickets, member counts, feeds, spreadsheets and bot logging. It is built to static files and served by the bot process.
 
-Both apps use the same Firebase database for production state. If Firebase is not configured, local JSON files are used for development.
+Production state lives in Firebase (the same documents the earlier Node bot used, so existing data keeps working). Without Firebase, local JSON files are used for development.
+
+> Moving from the Node bot? Read [docs/MIGRATION.md](docs/MIGRATION.md): what stayed identical, what changed on purpose, and the known limits.
 
 ## Repository Layout
 
 ```text
 .
 ├── bot/
-│   ├── commands/
-│   │   ├── slash/
-│   │   └── text/
-│   ├── events/
-│   ├── utils/
-│   ├── data/
-│   ├── index.js
-│   └── deploy-commands.js
-├── dashboard/
-│   ├── server/
-│   ├── src/
-│   ├── public/
-│   └── server.js
-├── logs/
-└── README.md
+│   ├── native/            Rust workspace
+│   │   ├── dca-bot/       Discord bot, managers, commands, dashboard API and OAuth
+│   │   ├── dca-core/      PaddleOCR vision, standings and licence reading, XLSX/report/image output
+│   │   └── dca-state/     Firebase (Firestore / Realtime Database) + local JSON state, typed config
+│   ├── assets/mastery/    Images for /sportscar and /garage
+│   ├── fonts/             Bundled Noto fonts (text + colour emoji) for rendered images and emoji matching
+│   ├── fixtures/guides/   The two guide screenshots (also served by the dashboard)
+│   ├── scripts/download-models.sh
+│   ├── models/            PaddleOCR ONNX models (downloaded, not committed)
+│   └── Dockerfile
+├── dashboard/             React app (Vite): src/, public/
+├── docs/                  Guides (HTML) and the migration notes
+└── render.yaml
 ```
 
 ## Requirements
 
-- Node.js 18 or newer.
-- A Discord application with a bot user.
-- A bot token with the needed gateway intents enabled.
-- A Firebase project with Cloud Firestore or Realtime Database enabled for production state.
+- A Discord application with a bot user and a bot token with the **Server Members** and **Message Content** privileged intents enabled (the bot requests Guilds, Guild Messages, Guild Members, Reactions, Moderation, Message Content and Direct Messages).
+- A Firebase project with Cloud Firestore or Realtime Database for production state (optional for development).
+- To run from source: Rust (stable, 1.80+) and a C++ toolchain (ONNX Runtime is linked statically), plus Node 18+ only to build the dashboard. Or just use the Docker image, which needs nothing installed.
 
-The team-event spreadsheet system uses:
+Screenshots (driver licences, team-event standings) are read by **local PaddleOCR (PP-OCRv5 on ONNX Runtime)**: no API keys, no paid services, no outside calls and no quota. See [Screenshot reading](#screenshot-reading-local-paddleocr).
 
-- Google Gemini Flash for image text extraction and structured parsing.
-- `sharp` for screenshot normalization before sending images to Gemini.
-- `exceljs` for XLSX files.
-
-Gemini uses the REST `generateContent` API with inline image data. The implementation follows Google's official Gemini API shape for `inline_data` multimodal requests: https://ai.google.dev/api
-
-Required recruitment Gemini environment:
-
-```env
-RECRUITMENT_GEMINI_API_KEY=google_ai_studio_key_for_recruitment_license_ocr
-```
-
-Spreadsheet Gemini keys are configured per team in the dashboard. They intentionally default to blank.
-
-Optional Gemini and XLSX environment:
-
-```env
-GEMINI_FLASH_MODEL=gemini-3.6-flash
-GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
-GEMINI_TIMEOUT_MS=300000
-GEMINI_MAX_RETRIES=4
-SPREADSHEET_IMAGE_RETENTION_DAYS=7
-LIBREOFFICE_PATH=soffice
-```
-
-LibreOffice is only a fallback because XLSX files are written directly by Node.
-
-## Root Scripts
+## Run it
 
 ```bash
-npm run start:bot
-npm run start:dashboard
-npm run deploy:commands
+# 1. dashboard (once, and after dashboard changes)
+cd dashboard && npm install && npm run build && cd ..
+
+# 2. OCR models (~100 MB, once; the bot also downloads missing models by itself)
+sh bot/scripts/download-models.sh
+
+# 3. the bot + dashboard (slash commands are registered on start)
+cd bot/native
+DISCORD_TOKEN=... cargo run --release -p dca-bot
 ```
 
-`start:bot` deploys slash commands first and then runs the bot. For local development where commands are already deployed, use:
+Everything is read from the environment (a `.env` file in the repository root, `bot/` or the working directory is loaded). Open `http://localhost:3000/dashboard` for the dashboard.
 
-```bash
-cd bot
-npm run start:runtime
-```
+Docker (what Render uses): `docker build -f bot/Dockerfile -t dca-bot .` from the repository root. The image contains the binary, the built dashboard, the fonts and the OCR models.
 
-## Bot Setup
+### Environment
 
-Install and run:
-
-```bash
-cd bot
-npm install
-npm run deploy:commands
-npm start
-```
-
-Required bot environment:
+Required:
 
 ```env
 DISCORD_TOKEN=your_bot_token
-DISCORD_CLIENT_ID=your_application_id
 FIREBASE_PROJECT_ID=your_firebase_project_id
 FIREBASE_SERVICE_ACCOUNT=service_account_json_or_base64_json
 FIREBASE_DATABASE_URL=https://your-project-id-default-rtdb.firebaseio.com
-RECRUITMENT_GEMINI_API_KEY=google_ai_studio_key_for_recruitment_license_ocr
 ```
 
-Recommended bot environment:
+The bot exits at start when `DISCORD_TOKEN` is missing (same as before). Slash commands are registered globally every time the bot starts, so `npm run deploy:commands` no longer exists. Set `DCA_SKIP_COMMAND_DEPLOY=1` to skip it.
+
+Recommended:
 
 ```env
 DISCORD_GUILD_ID=fallback_server_id
@@ -111,459 +77,168 @@ RECRUITMENT_GUILD_ID=recruitment_server_id
 RECRUITER_ROLE_ID=role_that_can_manage_recruitment
 FIREBASE_DATABASE_TYPE=realtime
 FIREBASE_STATE_ROOT=dca_bot_state
-PORT=3001
+PORT=3000
 ```
 
-The bot exposes:
-
-- `/` - basic status.
-- `/health` - health check endpoint for hosting platforms.
-
-## Dashboard Setup
-
-Install, build, and run:
-
-```bash
-cd dashboard
-npm install
-npm run build
-npm start
-```
-
-Open:
-
-```text
-http://localhost:3000/dashboard
-```
-
-Required dashboard environment:
+Dashboard sign-in:
 
 ```env
-DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
 DISCORD_CLIENT_SECRET=your_oauth_secret
-FIREBASE_PROJECT_ID=same_firebase_project_id_as_bot
-FIREBASE_SERVICE_ACCOUNT=same_service_account_json_or_base64_json_as_bot
-FIREBASE_DATABASE_URL=same_realtime_database_url_as_bot
 DASHBOARD_BASE_URL=https://your-dashboard.example.com
 DISCORD_REDIRECT_URI=https://your-dashboard.example.com/auth/discord/callback
 DASHBOARD_SESSION_SECRET=a_long_random_secret
-```
-
-Bootstrap access environment:
-
-```env
-DISCORD_GUILD_ID=fallback_server_id
-COMMUNITY_GUILD_ID=community_server_id
-RECRUITMENT_GUILD_ID=recruitment_server_id
 DASHBOARD_ALLOWED_ROLE_ID=role_that_can_open_dashboard
 ```
 
-Optional upload environment:
+Optional:
 
 ```env
 DASHBOARD_UPLOAD_CHANNEL_ID=discord_channel_for_tutorial_uploads
 DASHBOARD_UPLOAD_LIMIT=100mb
+DASHBOARD_UPLOAD_DIR=/path/for/uploads        # when no upload channel is set
+DASHBOARD_ROLE_RECHECK_MINUTES=5
 DASHBOARD_ROLE_RECHECK_GRACE_MINUTES=30
-FIREBASE_DATABASE_TYPE=realtime
-FIREBASE_STATE_ROOT=dca_bot_state
+DASHBOARD_SESSION_HOURS=8
+SPREADSHEET_IMAGE_RETENTION_DAYS=7
+RECRUITMENT_SCREENSHOT_DM_USER_ID=user_that_stores_applicant_screenshots
+DCA_DATA_DIR=bot/data                         # local JSON state and generated spreadsheets
+DCA_MODELS_DIR=bot/models  DCA_FONTS_DIR=bot/fonts  DCA_ASSETS_DIR=bot/assets  DASHBOARD_DIST_DIR=dashboard/dist
+DCA_MODEL_BASE_URL=...                        # mirror for the OCR model files
+DCA_OCR_DEBUG=1                               # print name candidates while reading
+RUST_LOG=info
+DCA_OCR_THREADS=1                             # ONNX threads (default: what the container may use)
+DCA_OCR_QUICK_SECS=20  DCA_OCR_CHECK_SECS=45  # how long an applicant's screenshot check may take before it is accepted on trust
+DCA_OCR_RECYCLE_MB=205                        # rebuild the OCR sessions above this resident size (default 40% of the memory limit)
 ```
 
-On Vercel, prefer a Discord upload channel for tutorial videos because serverless disk storage is temporary.
+The bot exposes `GET /` and `GET /health` (200 only while connected to Discord, 503 otherwise, plus the OCR state: `ready`, `loading` or an error) and serves the dashboard and its API on the same port.
 
-## Discord OAuth Redirect
+### Dashboard sign-in
 
-The redirect URI in the Discord Developer Portal must exactly match `DISCORD_REDIRECT_URI`.
-
-Example:
-
-```text
-https://your-dashboard.example.com/auth/discord/callback
-```
-
-If login fails with a callback or OAuth exchange error, check:
-
-- `DISCORD_CLIENT_ID`
-- `DISCORD_CLIENT_SECRET`
-- `DASHBOARD_BASE_URL`
-- `DISCORD_REDIRECT_URI`
-- The redirect URI registered in the Discord Developer Portal
+The redirect URI in the Discord Developer Portal must exactly match `DISCORD_REDIRECT_URI`, for example `https://your-dashboard.example.com/auth/discord/callback`. If login fails, check `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DASHBOARD_BASE_URL`, `DISCORD_REDIRECT_URI`, the role id, that the bot is in the configured server, and that cookies are allowed for the dashboard domain. Sessions are signed cookies; the allowed role is re-checked every few minutes with a grace period if Discord is briefly unreachable.
 
 ## Server Model
-
-The bot supports two server IDs:
 
 - Community server - welcome, leave, reaction roles, YouTube posts, member count, dashboard access role, and destination invites.
 - Recruitment server - recruitment panel, ticket threads, recruiter roles, ban list, screenshot guide uploads, and recruitment logs.
 
-The dashboard Spreadsheet page can choose monitored channels, output channels, and access roles from both the community and recruitment servers.
+The dashboard Spreadsheet page can choose monitored channels, output channels and access roles from both servers.
 
 ## Recruitment Tickets
 
-The recruitment system posts an Apply button. Applicants answer prompts and upload screenshots. Recruiters manage the ticket using slash commands and buttons.
-
-Main commands:
+The recruitment system posts an Apply button. Applicants upload their driver's licence (and optionally team-event screenshots) in the panel channel; the bot mirrors them to a private DM store, checks that they are real in-game screenshots (one quick pass, nothing else is read), asks for corrections with the guide images when a screenshot is wrong, and opens a private thread with **Claim** and **Close** buttons.
 
 ```text
-/tickets setup
-/tickets sync-panel
-/tickets sync-banlist
-/tickets status
-/tickets logs
-/tickets claim
-/tickets close
-/tickets add
-/tickets massadd
-/tickets remove
-/tickets rename
-/tickets screenshot-list
-/tickets screenshot-add
-/tickets screenshot-change
-/tickets screenshot-remove
-/tickets archive
-/tickets delete
+/tickets setup | sync-panel | sync-banlist | status | logs
+/tickets claim | close | add | massadd | remove | rename | archive | delete
+/tickets screenshot-list | screenshot-add | screenshot-change | screenshot-remove
 /invite
 /ban
 ```
 
-Ticket close outcomes are configured in the dashboard. Accepted recruits can trigger member-count updates and delayed role assignment in the recruitment and community servers. Closing a ticket sends a recruitment log embed built from Gemini Flash extraction, including the Discord user ID, previous team, team joined, garage power, named team-event scores, and the driver's license screenshot.
+Ticket close outcomes are configured in the dashboard. Accepted recruits trigger member-count updates and delayed role assignment in the recruitment and community servers. Closing a ticket sends a recruitment log embed at once (Discord user ID, team joined, screenshot counts, licence screenshot), locks and archives the thread, and stores the transcript. For an accepted recruit the screenshots are then read once in the background (one text pass per image) and the embed is completed with the in-game name, previous team, garage power and the applicant's team-event rank, points and score. That is the only OCR a recruitment needs; ticket creation just checks that the screenshots are real game screenshots.
+
+## Screenshot reading (local PaddleOCR)
+
+One reader (`dca-core`) serves recruitment and the spreadsheets:
+
+- **Engine**: PP-OCRv5 text detection plus per-script recognisers (multilingual, Latin, Cyrillic, Arabic, Korean, Thai, Greek, Devanagari, Tamil, Telugu) on ONNX Runtime, in-process.
+- **Layout independent**: it does not assume where anything is. Standings rows come from the score column, ranks and names by position, and the row team from the colour of the band (yellow = own team, blue = opponent). Licences are read by their label words. Ranks are repaired from neighbouring rows and anything uncertain is flagged instead of guessed.
+- **Any capture**: any resolution or aspect ratio, cropped images (tight crops of only the table), letterboxed or stretched screenshots, sideways and upside-down files, and **photos of a device** (phone, tablet, a monitor with the game on it). A fallback ladder tries the image as is, autocropped, with the standings table flattened, with the screen rectified, and in all four orientations, and keeps the best reading.
+- **Names**: every name is read by several recognisers and voted, and emoji are matched against the bundled Noto Color Emoji set, so names like `📦DC|BlackWing` survive. Flags and rank badges are not read as part of the name.
+- **Instant check for applicants**: a screenshot is recognised from its text labels in a moment, so applicants are let through at once and the ticket is created automatically (also when a licence and event screenshots arrive in the same upload). Only photos and unusual files need the full reader, within a deadline.
+- **Fails open**: if the models are missing, still loading, or a check runs out of time, applicants are not blocked (the ticket is flagged for recruiters) and spreadsheet sessions report what failed.
+- **Small hosts**: one inference thread, sessions recycled when memory grows, language models loaded on demand. Measured on a 0.1 CPU / 512 MB container in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+Honest limits: Hebrew (no PaddleOCR model), emoji in a style other than Noto's, tiny superscript digits (`ARSH⁴⁴⁴` reads `ARSH44`) and white-heavy emoji can be misread; heavily blurred or extremely angled photos may only be recognised, not read. Treat the output as a head start and use the correction commands. Send real samples that fail to `bot/fixtures/samples/` to extend the test set.
+
+Models load in the background after start (and are downloaded once if missing), so the bot is up immediately; `/health` shows the OCR state.
 
 ## Team Counts And Roles
 
-Member count teams are configured in the dashboard Members page. Each team can have:
-
-- Display name.
-- Division.
-- Player count.
-- Recruitment status.
-- Recruitment server role assignment.
-- Community server role assignment after rules are accepted.
-- Auto-assignment delay.
-- Aliases for matching Gemini extraction and recruitment data.
-
-Useful commands:
+Member count teams are configured in the dashboard Members page: display name, division, player count, recruitment status, recruitment-server and community-server roles, auto-assignment delay and aliases (used to match what is read from screenshots).
 
 ```text
-/membercount set
-/membercount sync
-/membercount list
+/membercount set | sync | list
 /teamcount
 /updatecount
 ```
 
 ## Team Event Spreadsheet System
 
-The spreadsheet system watches configured team channels for image attachments. When screenshots are posted, the bot groups images into a pending team-event session for the configured grouping window. A session can contain one image, multiple images in one message, or multiple messages from the same user/channel during the window.
+The bot watches configured team channels for image attachments. Screenshots from the same user in the same channel are grouped into one pending session during the grouping window (default 1 minute). After the window the session is read locally and the bot posts only generated outputs: the event XLSX (Summary, Ranking, Attendance and chart sheets), a spreadsheet preview image and a summary chart image. Parsing normalises the readings, applies staff corrections and computes statistics.
 
-After the window closes, Gemini Flash receives all images in the session together. The prompt asks Gemini to extract the visible event name, player rows, ranks, event points, total scores, team labels, own-team versus opponent classification, podium/summary data, and raw visible text. The parser then normalizes that JSON, applies staff corrections, calculates statistics, generates the final XLSX plus a spreadsheet preview image, and posts only those generated event outputs.
+Dashboard Spreadsheet team settings: enabled, monitored channel, output channel, team access role, own-team aliases, known own players, auto process.
 
-Dashboard Spreadsheet team settings:
+Global settings: grouping window, output format (`xlsx` or `fods`), raw data retention days (stored page readings, default 31), local image retention days (leftover generated images, default 7), LibreOffice path (leave blank; XLSX is written directly).
 
-- Enabled - enables capture for that team.
-- Monitored channel - screenshot input channel, from either server.
-- Output channel - where generated files and reports are posted, from either server.
-- Team access role - role allowed to use spreadsheet commands, from either server.
-- Own team aliases - names used to identify own-team rows in Gemini output.
-- Auto process - automatically process sessions after the grouping window.
+Screenshot rules: send all screenshots of one event together; several images in one message or several messages from the same user are appended while the window is open; podium, summary, standings and cropped list screenshots can be mixed; do not submit two events in one window.
 
-Global Spreadsheet settings:
-
-- Grouping window - minutes to group screenshots from the same user, default 1.
-- Output format - `xlsx` or `fods`.
-- Gemini Flash model - defaults to `gemini-3.6-flash`.
-- Gemini timeout ms - defaults to `300000`.
-- Gemini retries - defaults to `4`.
-- Raw data retention days - how long raw Gemini text/JSON stays in state before cleanup.
-- Local image retention days - maximum age for generated spreadsheet/report images that could not be deleted immediately after posting, default 7.
-- LibreOffice path - leave blank for direct `exceljs` XLSX writing.
-
-The Gemini API key is configured by environment variable, not in the dashboard:
-
-```env
-RECRUITMENT_GEMINI_API_KEY=google_ai_studio_key_for_recruitment_license_ocr
-```
-
-Screenshot submission rules:
-
-- Use uncropped screenshots when possible.
-- Send all screenshots for one event close together in the monitored channel.
-- Multiple images in one Discord message are treated as one submission.
-- Multiple messages from the same user in the same channel are appended while the grouping window is open.
-- Podium, summary, standings, and cropped list screenshots can be mixed in one session.
-- Do not submit screenshots from two different events in the same grouping window unless you want them parsed as one session.
-
-## Spreadsheet Commands
+### Spreadsheet commands
 
 ```text
-/spreadsheets status team:<team>
-/spreadsheets sessions team:<team>
-/spreadsheets generate team:<team> [session_id] [rerun_gemini]
-/spreadsheets summary team:<team> [session_id]
-/spreadsheets weekly team:<team> [anchor_date]
-/spreadsheets monthly team:<team> [anchor_date]
-/spreadsheets correct team:<team> session_id:<id> row:<rank> field:<field> value:<value>
-/spreadsheets correct-name team:<team> session_id:<id> row:<rank> value:<name>
-/spreadsheets correct-team team:<team> session_id:<id> row:<rank> team_type:<own|opponent> [value:<label>]
-/spreadsheets correct-placement team:<team> session_id:<id> row:<rank> placement:<rank>
-/spreadsheets correct-points team:<team> session_id:<id> row:<rank> field:<points|score> value:<number>
-/spreadsheets correct-event-name team:<team> session_id:<id> value:<event>
-/spreadsheets rebuild team:<team> session_id:<id>
-/spreadsheets regenerate-weekly team:<team> [anchor_date]
-/spreadsheets regenerate-monthly team:<team> [anchor_date]
-/spreadsheets file team:<team> [session_id]
-/spreadsheets chart team:<team> [session_id]
+/spreadsheets status | sessions | generate [session_id] [rerun_ocr] | summary [session_id]
+/spreadsheets weekly | monthly [anchor_date]
+/spreadsheets correct | correct-name | correct-team | correct-placement | correct-points | correct-event-name
+/spreadsheets rebuild | regenerate-weekly | regenerate-monthly | file | chart
 ```
 
-`anchor_date` uses `YYYY-MM-DD`. If omitted, weekly and monthly reports use the date of the latest processed session.
+`anchor_date` is `YYYY-MM-DD`; without it reports use the date of the latest processed session. Temporary development commands, marked `TEMP` in Discord: `test-ocr`, `test-grouping`, `preview`, `rebuild-event`, `force-weekly`, `force-monthly`.
 
-Temporary development commands:
+### Automatic weekly and monthly reports
 
-```text
-/spreadsheets test-gemini team:<team> [session_id]
-/spreadsheets test-grouping team:<team>
-/spreadsheets preview team:<team> [session_id]
-/spreadsheets rebuild-event team:<team> session_id:<id>
-/spreadsheets force-weekly team:<team> [anchor_date]
-/spreadsheets force-monthly team:<team> [anchor_date]
-```
+Normal event output posts only the XLSX, the preview image and the chart. A weekly report is posted when the parsed event name changes from the previous processed event; a monthly report is posted by the scheduler during the first three UTC days of the new month, once per team and output channel. Rules: every processed session is one event; missing players score `0`; the period maximum is the sum of each event's maximum; `%kill` is `total / max`; `#KAB` counts events where the player ranked above every opponent (`0` when no opponent rows exist). Report workbooks have a `Report` sheet and a `Details` sheet.
 
-These are clearly marked `TEMP` in Discord and can be removed after production confidence is high.
+### Correction workflow
 
-## Automatic Weekly And Monthly Reports
+If a name, team, rank, points, score or event name is read wrong, use the `correct-*` commands. Corrections are an override layer on the session; rebuilds replay the stored page readings plus corrections, so nothing is read twice, and later reports use the corrected data. Stored readings are cleaned after the raw data retention period.
 
-Normal event output posts only:
+## Other commands
 
-- The final event XLSX.
-- A generated image preview of the spreadsheet data.
-- A generated summary chart image.
+Slash: `/help`, `/ping`, `/dashboard`, `/invite`, `/whois`, `/yt`, `/ban`, `/warn`, `/clearwarns`, `/snap`, `/roles`, `/remindme`, `/reminders`, `/cancelreminder`, `/top3te`, `/top3km`, `/teameventsummary`, `/sportscar`, `/garage`, `/membercount`, `/teamcount`, `/updatecount`, `/tickets`, `/spreadsheets`.
 
-No normal-event embeds are posted to the output channel. The event XLSX contains summary, ranking, attendance, chart, and raw Gemini sheets.
-
-Weekly reports are generated when the parsed team event name changes from the previous processed event for that team. The weekly report includes the event names covered that week, player totals, attendance, missed events, #KAB totals, and zero-score events.
-
-Monthly reports are generated automatically after month end by the bot scheduler. The scheduler checks during the first three UTC days of the new month and posts the previous calendar month's report once per team/output channel. Staff can force a monthly report with `/spreadsheets regenerate-monthly` or `/spreadsheets force-monthly`.
-
-Report rules:
-
-- Every processed session in the period is treated as one team event.
-- Event columns use the Gemini-detected team event name from the screenshot when available.
-- Missing players receive a score of `0` for that event.
-- The period max score is the sum of each event's max score.
-- `%kill` is `total / max`.
-- `#KAB` is the number of events where the player ranked above every opponent.
-- If no opponent rows were detected for an event, `#KAB` is `0` because opponent order cannot be proven.
-- Weekly reports include the team event names in both the spreadsheet columns and the Details sheet.
-- Monthly reports use the same scoring rules over the calendar month.
-
-The generated workbooks contain:
-
-- `Report` sheet with rank, name, event scores, `%kill`, total, max, `#KAB`, missed events, and attended events.
-- `Details` sheet with period metadata, report rules, event names, dates, session IDs, max scores, and players parsed.
-
-## Gemini Correction Workflow
-
-If Gemini reads a player name, team, rank, points, score, or event name incorrectly:
-
-```text
-/spreadsheets correct team:<team> session_id:<id> row:<rank> field:<field> value:<value>
-/spreadsheets correct-name team:<team> session_id:<id> row:<rank> value:<name>
-/spreadsheets correct-team team:<team> session_id:<id> row:<rank> team_type:<own|opponent> [value:<label>]
-/spreadsheets correct-placement team:<team> session_id:<id> row:<rank> placement:<rank>
-/spreadsheets correct-points team:<team> session_id:<id> row:<rank> field:<points|score> value:<number>
-/spreadsheets correct-event-name team:<team> session_id:<id> value:<event>
-```
-
-Corrections are saved as an override layer on the session. Rebuilds always replay Gemini extraction plus staff corrections, so the original raw extraction remains auditable until retention cleanup. Weekly and monthly reports reflect corrected session data the next time they are generated, regenerated, or when another event triggers a report.
-
-## Help Commands
-
-Slash help:
-
-```text
-/help
-```
-
-Prefix help:
-
-```text
--help
-```
-
-The help output covers recruitment, spreadsheets, weekly/monthly reports, member counts, moderation, reminders, feeds, and dashboard access.
+Prefix (`-`): `announce`, `bam`, `ban`, `clean`, `clearwarns`, `help`, `kick`, `ping`, `team`, `mkick`, `mute`, `pingmessage`, `snapban`, `temperature` (`temp`, `weather`), `unban`, `warn`, `warnings`, `whois`, `yt`. `-help` and `/help` list everything.
 
 ## Dashboard Pages
 
-- Overview - bot and server status.
-- Tickets - active tickets, logs, transcripts, tutorials, and ticket settings.
-- Reaction Roles - dashboard-managed reaction role panels.
-- YouTube - RSS feed checks and announcement channels.
-- Spreadsheets - Gemini settings, team channels, output channels, roles, and report setup.
-- Members - member count and role assignment settings.
-- Logs - combined bot and recruitment logs.
-- Server - community and recruitment server IDs, dashboard role, recruiter role, manager role, command log channel, and dashboard URL.
+Overview, Tickets (active tickets, logs, transcripts, tutorials, settings), Reaction Roles, YouTube, Spreadsheets (team channels, output channels, roles, report setup), Members, Logs, Server (server ids, dashboard role, recruiter role, manager role, command log channel, dashboard URL).
 
 ## State Storage
 
-With Firebase configured, state is stored in Firebase. Realtime Database is recommended for this app because some spreadsheet/session state can grow large; Cloud Firestore is also supported.
+With Firebase configured, state is stored there. Realtime Database is recommended (spreadsheet state can grow large); Cloud Firestore is also supported.
 
 ```env
-FIREBASE_DATABASE_TYPE=realtime
+FIREBASE_DATABASE_TYPE=realtime            # or firestore
 FIREBASE_DATABASE_URL=https://your-project-id-default-rtdb.firebaseio.com
-FIREBASE_STATE_ROOT=dca_bot_state
+FIREBASE_STATE_ROOT=dca_bot_state          # Firestore: FIREBASE_STATE_COLLECTION=dca_bot_state
 ```
 
-For Cloud Firestore instead:
+Each scope is stored as `{ "data": ..., "updatedAt": ... }` under the root or collection: `dashboardConfig`, `recruitmentTickets`, `recruitmentLogs`, `recruitmentBans`, `botLogs`, `warnings`, `spreadsheetSessions`, `spreadsheetReportEmissions`, `teamRoleAssignments` and (new) `reminders`. Credentials: `FIREBASE_SERVICE_ACCOUNT` (raw or base64 JSON), `FIREBASE_SERVICE_ACCOUNT_PATH` or `GOOGLE_APPLICATION_CREDENTIALS`. The service-account JSON can be shared with any previous deployment: nothing needs migrating.
 
-```env
-FIREBASE_DATABASE_TYPE=firestore
-FIREBASE_STATE_COLLECTION=dca_bot_state
-```
+Without Firebase, scopes are JSON files in `bot/data/` (override with `DCA_DATA_DIR`) and generated spreadsheets are under `bot/data/spreadsheets/`. A state document that fails to load is never overwritten by an empty one.
 
-Each state scope is stored under the configured root or collection with this shape:
+## Deployment
 
-```json
-{
-  "data": {},
-  "updatedAt": "2026-07-22T00:00:00.000Z"
-}
-```
+Production runs on a single AWS EC2 instance (about $13/month): see [deploy/aws/README.md](deploy/aws/README.md). GitHub Actions builds the bot and the dashboard on every push to `main`; `deploy/aws/provision.sh` creates the instance and `sudo dca-update` on it installs the latest build. A Docker image can be built from `bot/Dockerfile` (`docker build -f bot/Dockerfile -t dca-bot .` from the repository root) for any other host. Use the same Firebase project and credentials as before. Register `https://<your-host>/auth/discord/callback` as the OAuth redirect.
 
-Supported Firebase credentials:
-
-```env
-FIREBASE_PROJECT_ID=your_firebase_project_id
-FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
-FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
-GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
-```
-
-Use either `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_SERVICE_ACCOUNT_PATH`, or `GOOGLE_APPLICATION_CREDENTIALS`. `FIREBASE_SERVICE_ACCOUNT` can be raw JSON or base64-encoded JSON, which is usually easier on hosting platforms.
-
-Without Firebase configuration, app-local JSON fallback files are used:
-
-```text
-bot/data/dashboardConfig.json
-bot/data/recruitmentTickets.json
-bot/data/recruitmentLogs.json
-bot/data/recruitmentBans.json
-bot/data/botLogs.json
-bot/data/spreadsheetSessions.json
-bot/data/warnings.json
-```
-
-Generated spreadsheet outputs are written under:
-
-```text
-bot/data/spreadsheets/
-```
-
-Raw Gemini text/JSON is stored with the spreadsheet session for short-term auditing and is cleaned after the configured retention period, default 31 days. Generated spreadsheet and report images are treated as temporary delivery files: after the bot uploads them to Discord it removes the local image copies, and maintenance also removes any leftover local images older than the configured local image retention period, default 7 days.
-
-Local normalized screenshot downloads are temporary processing inputs and are cleaned after spreadsheet processing/output.
-
-## Deployment Notes
-
-Recommended production split:
-
-- Bot on Render or another long-running Node host.
-- Dashboard on Vercel or another web host.
-- Shared Firebase project.
-
-For the bot host:
+## Tests
 
 ```bash
-cd bot
-npm install
-npm run deploy:commands
-npm start
+cd bot/native && cargo test --workspace
 ```
 
-For the dashboard host:
+The suite includes a fake Discord server (`dca-bot/src/mock_discord.rs`) that the bot's real code talks to, so whole flows run without a connection: applying with a licence, auto ticket creation, closing a ticket, the five-screenshot / 96-player sample event (`bot/fixtures/samples`, ground truth in `team-event-expected.tsv`), spreadsheet commands, reaction roles, welcome/leave, YouTube, panels and the commands. `bot/native/.cargo/config.toml` raises the test stack size.
 
-```bash
-cd dashboard
-npm install
-npm run build
-npm start
-```
-
-Use the same `FIREBASE_PROJECT_ID`, credentials, database type, and state root/collection for both apps so bot runtime state and dashboard configuration stay synchronized.
-
-## Migrating From Neon
-
-Before removing Neon, export the existing `dca_bot_state` rows and the legacy `warnings` table.
-
-The Firebase database should receive one entry per state scope. For Realtime Database, these are paths under `dca_bot_state`; for Firestore, these are documents in the `dca_bot_state` collection:
-
-```text
-dca_bot_state/dashboardConfig
-dca_bot_state/recruitmentTickets
-dca_bot_state/recruitmentLogs
-dca_bot_state/recruitmentBans
-dca_bot_state/botLogs
-dca_bot_state/spreadsheetSessions
-dca_bot_state/spreadsheetReportEmissions
-dca_bot_state/teamRoleAssignments
-dca_bot_state/warnings
-```
-
-For rows from the old `dca_bot_state` table, use `scope` as the Firestore document ID and put the old `data` JSON under the document's `data` field. For the old SQL `warnings` table, create one Firestore document named `warnings`:
-
-```json
-{
-  "data": {
-    "warnings": [
-      {
-        "id": "legacy-1",
-        "userId": "discord_user_id",
-        "guildId": "discord_guild_id",
-        "reason": "warning reason",
-        "createdAt": "2026-07-22T00:00:00.000Z"
-      }
-    ]
-  },
-  "updatedAt": "2026-07-22T00:00:00.000Z"
-}
-```
+Covers the state layer (including legacy Node records and concurrent writes), report maths and spreadsheet generation, the dashboard HTTP API, and end-to-end runs of the recruitment reading and the spreadsheet pipeline on the guide screenshots (these use the OCR models and skip themselves when they are not downloaded). No Discord connection or API keys are needed.
 
 ## Troubleshooting
 
-If slash commands are missing:
-
-```bash
-cd bot
-npm run deploy:commands
-```
-
-If Gemini extraction returns poor results:
-
-- Use uncropped, high-resolution screenshots.
-- Increase grouping window if screenshots arrive slowly.
-- Add own team aliases in the dashboard.
-- Use `/spreadsheets preview` or `/spreadsheets test-gemini` to inspect parsed rows.
-- Use `/spreadsheets correct-*` commands for field-level fixes.
-- Rebuild with `/spreadsheets rebuild` after corrections.
-
-If weekly or monthly reports are empty:
-
-- Confirm the team has processed sessions.
-- Confirm the session dates fall in the requested week or month.
-- Use `anchor_date` to target an older period.
-- Confirm the team ID matches the configured dashboard team.
-
-If automatic reports are not posted:
-
-- Confirm the team output channel is configured.
-- Confirm the bot can send messages and attach files in that channel.
-- Confirm auto process is enabled, or manually run `/spreadsheets generate`.
-
-If dashboard login fails:
-
-- Verify the Discord OAuth redirect URI.
-- Verify the dashboard role ID.
-- Verify the community server ID.
-- Verify the bot is in the configured server.
-- Verify cookies are allowed for the dashboard domain.
+- Slash commands missing: restart the bot (they are registered on start) and check the log for `Registered N global command(s)`.
+- Poor spreadsheet reads: use uncropped, high-resolution screenshots or a straight photo of the whole table; add own team aliases; use `/spreadsheets preview` or `test-ocr`; fix rows with `/spreadsheets correct-*` and `rebuild`.
+- `/health` shows `ocr: loading` or an error: the models are being downloaded or cannot be fetched; run `sh bot/scripts/download-models.sh` or set `DCA_MODEL_BASE_URL`.
+- Reports empty: confirm processed sessions exist in the period, use `anchor_date`, and check the team id matches the dashboard team.
+- Reports not posted: check the output channel, the bot's send/attach permissions and that auto process is on.
 
 ## Contributors
 

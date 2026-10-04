@@ -306,7 +306,7 @@
           <tr><td>Tickets</td><td>Recruitment panel, ticket settings, outcomes, tutorials, invites, and ban list channel.</td></tr>
           <tr><td>Reaction Roles</td><td>Community reaction role panel configuration.</td></tr>
           <tr><td>YouTube</td><td>Feed configuration and announcement template.</td></tr>
-          <tr><td>Spreadsheets</td><td>Gemini extraction settings and team-event channel setup.</td></tr>
+          <tr><td>Spreadsheets</td><td>Grouping window, live status and team-event channel setup.</td></tr>
           <tr><td>Members</td><td>Member-count message, team list, aliases, and role automation.</td></tr>
           <tr><td>Logs</td><td>Bot logs, recruitment logs, ticket records, transcripts, and applicant images.</td></tr>
           <tr><td>Documentation</td><td>Embedded complete web guide with section links.</td></tr>
@@ -356,7 +356,7 @@
         </tbody>
       </table>
       <div class="command"><code>/spreadsheets status / sessions</code><span>Inspect setup and recent sessions.</span></div>
-      <div class="command"><code>/spreadsheets generate rerun_gemini:true</code><span>Process a session and optionally rerun Gemini extraction.</span></div>
+      <div class="command"><code>/spreadsheets generate rerun_ocr:true</code><span>Process a session and optionally read its screenshots again.</span></div>
       <div class="command"><code>/spreadsheets summary / file / chart</code><span>Review parsed data or retrieve generated artifacts.</span></div>
       <div class="command"><code>/spreadsheets weekly / monthly anchor_date:YYYY-MM-DD</code><span>Build period reports for a specific week or month.</span></div>
       <div class="command"><code>/spreadsheets correct</code><span>Apply a generic field correction when a staff member needs one command for names, teams, ranks, points, scores, or event names.</span></div>
@@ -442,12 +442,12 @@
           <tr><td>Apply panel stale</td><td>Tickets dashboard settings</td><td>Save config, then sync the panel.</td></tr>
           <tr><td>Reaction roles not updated</td><td>Panel channel/message IDs</td><td>Save config, then sync reaction roles.</td></tr>
           <tr><td>Spreadsheet session missing</td><td>Monitored channel, enabled team, attachments</td><td>Use status and test-grouping, then post images in the correct channel.</td></tr>
-          <tr><td>Bad spreadsheet OCR</td><td>Summary preview and parsed rows</td><td>Use corrections, rebuild, or rerun Gemini.</td></tr>
+          <tr><td>Bad spreadsheet OCR</td><td>Summary preview and parsed rows</td><td>Use corrections, rebuild, or rerun the OCR.</td></tr>
           <tr><td>Report did not post</td><td>Output channel and duplicate guard</td><td>Set output channel or regenerate with the correct anchor date.</td></tr>
         </tbody>
       </table>
       <div class="command"><code>/help</code><span>Show high-level command help.</span></div>
-      <div class="command"><code>/spreadsheets test-gemini</code><span>Rerun Gemini extraction for preview debugging.</span></div>
+      <div class="command"><code>/spreadsheets test-ocr</code><span>Read the screenshots again for preview debugging.</span></div>
       <div class="command"><code>/spreadsheets test-grouping</code><span>Inspect pending screenshot grouping state.</span></div>
       <div class="command"><code>/spreadsheets preview</code><span>Preview parsed output without posting final files.</span></div>
       <div class="callout"><strong>Operational rule</strong><p>When correcting data, fix the event session first, rebuild the outputs, then regenerate weekly or monthly reports that depend on that event.</p></div>
