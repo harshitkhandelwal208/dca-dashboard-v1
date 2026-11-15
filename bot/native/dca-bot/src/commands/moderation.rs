@@ -30,7 +30,7 @@ async fn dm(app: &App, user: &User, message: CreateMessage) -> bool {
 }
 
 /// Is this the recruitment server (bans there are mirrored into the team-join ban list)?
-async fn is_recruitment_ban_server(app: &App, guild: GuildId) -> bool {
+pub(crate) async fn is_recruitment_ban_server(app: &App, guild: GuildId) -> bool {
     let config = app.config().await;
     let configured = if config.bot.recruitment_guild_id.is_empty() { std::env::var("RECRUITMENT_GUILD_ID").unwrap_or_default() } else { config.bot.recruitment_guild_id.clone() };
     if !configured.is_empty() {

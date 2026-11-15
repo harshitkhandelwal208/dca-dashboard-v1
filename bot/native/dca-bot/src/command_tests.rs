@@ -64,9 +64,25 @@ fn text_message(rig: &Rig, content: &str, author: u64, mention: Option<u64>) -> 
     parse_message(m)
 }
 
+fn text_message_with_roles(rig: &Rig, content: &str, author: u64, mention: Option<u64>, roles: &[u64]) -> Message {
+    let mut m = message_json(rig.mock.next_id(), PANEL, author, content, vec![]);
+    m["author"]["bot"] = json!(false);
+    if let Some(u) = mention {
+        m["mentions"] = json!([{ "id": u.to_string(), "username": "target", "discriminator": "0", "avatar": null, "member": { "roles": [], "joined_at": "2026-01-01T00:00:00.000000+00:00", "deaf": false, "mute": false } }]);
+    }
+    m["member"] = json!({ "roles": roles.iter().map(|r| r.to_string()).collect::<Vec<_>>(), "joined_at": "2026-01-01T00:00:00.000000+00:00", "deaf": false, "mute": false, "permissions": ADMIN });
+    parse_message(m)
+}
+
 async fn run_text(rig: &Rig, content: &str, author: u64, mention: Option<u64>) -> String {
     let before: usize = rig.all_posts();
     commands::dispatch_text(rig.app.clone(), text_message(rig, content, author, mention)).await;
+    rig.posts_since(before)
+}
+
+async fn run_text_with_roles(rig: &Rig, content: &str, author: u64, mention: Option<u64>, roles: &[u64]) -> String {
+    let before: usize = rig.all_posts();
+    commands::dispatch_text(rig.app.clone(), text_message_with_roles(rig, content, author, mention, roles)).await;
     rig.posts_since(before)
 }
 
@@ -389,4 +405,36 @@ async fn youtube_uploads_are_announced_once() {
     crate::managers::youtube::check_feeds(&rig.app).await;
     assert_eq!(rig.mock.messages_in(COMMUNITY_CHANNEL).len(), 1, "never announced twice");
     std::env::remove_var("DCA_YOUTUBE_FEED_BASE");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn recruiter_and_unrecruiter_commands() {
+    let rig = Rig::new("cmd-recruit", false).await;
+    rig.mock.set_member_roles(TARGET, &[]);
+
+    const ALLOWED: u64 = 922169747305558036;
+    const RECRUITER: u64 = 1082759575087882271;
+
+    // 1. Unauthorized author (lacks role 922169747305558036)
+    let denied = run_text_with_roles(&rig, &format!(">recruiter <@{TARGET}>"), MEMBER, Some(TARGET), &[]).await;
+    assert!(denied.contains("do not have permission"), "expected permission error: {denied}");
+
+    // 2. Authorized author assigns recruiter role 1082759575087882271
+    let assigned = run_text_with_roles(&rig, &format!(">recruiter <@{TARGET}>"), MOD, Some(TARGET), &[ALLOWED]).await;
+    assert!(assigned.contains("Assigned role"), "expected success: {assigned}");
+    assert!(rig.mock.roles_of(TARGET).contains(&RECRUITER.to_string()), "role was added in Discord");
+
+    // 3. Authorized author removes recruiter role 1082759575087882271
+    let removed = run_text_with_roles(&rig, &format!(">unrecruiter <@{TARGET}>"), MOD, Some(TARGET), &[ALLOWED]).await;
+    assert!(removed.contains("Removed role"), "expected success: {removed}");
+    assert!(!rig.mock.roles_of(TARGET).contains(&RECRUITER.to_string()), "role was removed from Discord");
+
+    // 4. Non-recruitment server
+    dca_state::config::update_config(&rig.app.store, |c| {
+        c.bot.recruitment_guild_id = "999999999999999999".into();
+    })
+    .await
+    .unwrap();
+    let wrong_server = run_text_with_roles(&rig, &format!(">recruiter <@{TARGET}>"), MOD, Some(TARGET), &[ALLOWED]).await;
+    assert!(wrong_server.contains("only be used in the recruitment server"), "expected server error: {wrong_server}");
 }

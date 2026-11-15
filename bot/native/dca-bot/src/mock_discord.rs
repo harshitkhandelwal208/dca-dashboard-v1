@@ -89,6 +89,10 @@ impl MockDiscord {
         self.inner.lock().unwrap().roles.insert(user.to_string(), roles.iter().map(|r| r.to_string()).collect());
     }
 
+    pub fn roles_of(&self, user: u64) -> Vec<String> {
+        self.inner.lock().unwrap().roles.get(&user.to_string()).cloned().unwrap_or_default()
+    }
+
     pub fn fail(&self, route_contains: &str, status: u16) {
         self.inner.lock().unwrap().failures.push((route_contains.to_string(), status));
     }

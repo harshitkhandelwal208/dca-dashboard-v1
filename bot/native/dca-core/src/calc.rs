@@ -114,18 +114,22 @@ pub fn event_summary(session: &SpreadsheetSession) -> EventSummary {
     let own = own_players(session);
     let opponents = opponent_players(session);
     let top = own.iter().min_by_key(|p| if p.rank == 0 { 999 } else { p.rank }).map(|p| (p.rank, p.player_name.clone()));
+    let own_pts = if stats.own_points != 0 { stats.own_points } else { own.iter().map(|p| points_value(p)).sum() };
+    let opp_pts = if stats.opponent_points != 0 { stats.opponent_points } else { opponents.iter().map(|p| points_value(p)).sum() };
+    let own_meta = team_score_from_metadata(session, true);
+    let opp_meta = team_score_from_metadata(session, false);
     EventSummary {
         event_name: event_name_for_session(session, "Team Event"),
         team_name: first_non_empty(&[&session.metadata.own_team_name, &session.team_name, &session.team_id, "Team"]),
         opponent_teams: session_opponent_teams(session),
         own_players: own.len(),
         opponent_count: opponent_count(session),
-        own_points: if stats.own_points != 0 { stats.own_points } else { own.iter().map(|p| points_value(p)).sum() },
-        opponent_points: if stats.opponent_points != 0 { stats.opponent_points } else { opponents.iter().map(|p| points_value(p)).sum() },
+        own_points: own_pts,
+        opponent_points: opp_pts,
         own_score: if stats.own_score != 0 { stats.own_score } else { own.iter().map(|p| score_value(p)).sum() },
         opponent_score: if stats.opponent_score != 0 { stats.opponent_score } else { opponents.iter().map(|p| score_value(p)).sum() },
-        own_team_score: team_score_from_metadata(session, true),
-        opponent_team_score: team_score_from_metadata(session, false),
+        own_team_score: if own_meta != 0 { own_meta } else { own_pts },
+        opponent_team_score: if opp_meta != 0 { opp_meta } else { opp_pts },
         kab_count: kab.values().sum(),
         top_driver: top,
     }
@@ -497,7 +501,9 @@ enum ColKind {
 
 pub fn build_spreadsheet_image_svg(session: &SpreadsheetSession) -> String {
     let sm = event_summary(session);
-    let team_points = if sm.own_team_score != 0 || sm.opponent_team_score != 0 { format!("{}-{}", sm.own_team_score, sm.opponent_team_score) } else { "n/a".into() };
+    let own_team_pts = if sm.own_team_score != 0 { sm.own_team_score } else { sm.own_points };
+    let opp_team_pts = if sm.opponent_team_score != 0 { sm.opponent_team_score } else { sm.opponent_points };
+    let team_points = if own_team_pts != 0 || opp_team_pts != 0 { format!("{}-{}", own_team_pts, opp_team_pts) } else { "n/a".into() };
     let score_text = format!("{}-{}", sm.own_score, sm.opponent_score);
     let versus = format!("{} vs {}", sm.team_name, sm.opponent_teams.join(", "));
     let pills = header_stat_pills(

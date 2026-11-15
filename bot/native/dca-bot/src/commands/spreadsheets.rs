@@ -19,8 +19,22 @@ fn fmt_local(value: &str) -> String {
 
 async fn resolve_team(app: &App, r: &Responder, value: &str) -> BotResult<Option<(DashboardConfig, SpreadsheetTeam)>> {
     let config = app.config().await;
-    let Some(team) = find_spreadsheet_team(&config, value).cloned() else {
-        r.edit_reply(ReplyData::text(format!("Spreadsheet team **{value}** is not configured."))).await?;
+    let team = if !value.is_empty() {
+        find_spreadsheet_team(&config, value).cloned()
+    } else {
+        let channel_id_str = r.channel_id().to_string();
+        config
+            .spreadsheets
+            .teams
+            .iter()
+            .find(|t| t.enabled && (t.monitored_channel_id == channel_id_str || t.output_channel_id == channel_id_str))
+            .cloned()
+            .or_else(|| config.spreadsheets.teams.iter().find(|t| t.enabled && !t.monitored_channel_id.is_empty()).cloned())
+            .or_else(|| config.spreadsheets.teams.first().cloned())
+    };
+    let Some(team) = team else {
+        let msg = if value.is_empty() { "No spreadsheet teams are configured.".to_string() } else { format!("Spreadsheet team **{value}** is not configured.") };
+        r.edit_reply(ReplyData::text(msg)).await?;
         return Ok(None);
     };
     let roles = r.member().map(|m| m.roles.clone()).unwrap_or_default();
@@ -77,18 +91,31 @@ fn preview_text(session: &SpreadsheetSession) -> String {
     )
 }
 
-async fn resolve_anchor(app: &App, o: &[ResolvedOption<'_>], team: &SpreadsheetTeam) -> BotResult<DateTime<Utc>> {
+async fn resolve_anchor(app: &App, o: &[ResolvedOption<'_>], team: &SpreadsheetTeam, period: &str) -> BotResult<DateTime<Utc>> {
     if let Some(value) = opts::string(o, "anchor_date") {
         if !value.is_empty() {
             return parse_anchor_date(value).map_err(|e| e.into());
         }
     }
-    let latest = list_sessions(&app.store, &SessionFilter { team_id: Some(team.id.clone()), status: Some("processed".into()) }).await;
-    Ok(latest.first().map(session_date).unwrap_or_else(Utc::now))
+    let mut latest = list_sessions(&app.store, &SessionFilter { team_id: Some(team.id.clone()), status: Some("processed".into()) }).await;
+    latest.sort_by_key(|s| std::cmp::Reverse(session_date(s)));
+    if let Some(first) = latest.first() {
+        let first_date = session_date(first);
+        let now_bounds = dca_core::report::period_bounds(period, Utc::now());
+        let has_current = latest.iter().any(|s| {
+            let d = session_date(s);
+            d >= now_bounds.start && d < now_bounds.end
+        });
+        if !has_current {
+            return Ok(first_date);
+        }
+        return Ok(Utc::now());
+    }
+    Ok(Utc::now())
 }
 
 async fn reply_with_period_report(app: &App, r: &Responder, o: &[ResolvedOption<'_>], team: &SpreadsheetTeam, period: &str) -> BotResult<()> {
-    let anchor = resolve_anchor(app, o, team).await?;
+    let anchor = resolve_anchor(app, o, team, period).await?;
     let Some(report) = generate_period_report(app, team, period, anchor, None, None).await? else {
         return r.edit_reply(ReplyData::text(format!("No processed spreadsheet sessions were found for this {}.", if period == "weekly" { "week" } else { "month" }))).await;
     };
@@ -100,7 +127,7 @@ async fn reply_with_period_report(app: &App, r: &Responder, o: &[ResolvedOption<
 }
 
 async fn post_report_and_reply(app: &App, r: &Responder, o: &[ResolvedOption<'_>], team: &SpreadsheetTeam, period: &str, reason: &str) -> BotResult<()> {
-    let anchor = resolve_anchor(app, o, team).await?;
+    let anchor = resolve_anchor(app, o, team, period).await?;
     let result = send_period_report(app, team, period, ReportOptions { anchor, force: true, reason: reason.into() }).await;
     if let Some(reason) = result.skipped {
         return r.edit_reply(ReplyData::text(format!("No {period} report was posted: {reason}."))).await;

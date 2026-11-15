@@ -79,7 +79,12 @@ pub fn filter_sessions_for_report<'a>(
     if normalize_key(&anchor_name).is_empty() {
         return processed;
     }
-    processed.into_iter().filter(|s| same_event_name(&event_name_for_session(s, "Team Event"), &anchor_name)).collect()
+    let filtered: Vec<&SpreadsheetSession> = processed.iter().copied().filter(|s| same_event_name(&event_name_for_session(s, "Team Event"), &anchor_name)).collect();
+    if filtered.is_empty() {
+        processed
+    } else {
+        filtered
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -223,8 +228,22 @@ pub fn build_report_model(team: &TeamInfo, sessions: &[&SpreadsheetSession], per
             top_opponent_rank: top_opponent_rank(s),
             max_score: event_max_score(s),
             max_points: event_max_points(s),
-            own_team_score: team_score_from_metadata(s, true),
-            opponent_team_score: team_score_from_metadata(s, false),
+            own_team_score: {
+                let sc = team_score_from_metadata(s, true);
+                if sc != 0 {
+                    sc
+                } else {
+                    own_players(s).into_iter().map(points_value).sum()
+                }
+            },
+            opponent_team_score: {
+                let sc = team_score_from_metadata(s, false);
+                if sc != 0 {
+                    sc
+                } else {
+                    opponent_players(s).into_iter().map(points_value).sum()
+                }
+            },
         })
         .collect();
 

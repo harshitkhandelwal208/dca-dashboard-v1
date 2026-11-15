@@ -109,7 +109,7 @@ fn classify(row_band: u8, band_conf: f32, name: &str, team: &TeamContext) -> (&'
 
 /// Merge several pages into one event.
 pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names: &[String]) -> Parsed {
-    let mut ranked: BTreeMap<u32, (Player, f32)> = BTreeMap::new();
+    let mut ranked: BTreeMap<(u32, String), (Player, f32)> = BTreeMap::new();
     let mut unranked: Vec<(Player, f32)> = Vec::new();
 
     // Podium rows (no score) only confirm names; they never replace a scored row.
@@ -157,19 +157,20 @@ pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names
                 unranked.push((player, row.name_confidence));
                 continue;
             }
+            let key = (row.rank, player_key(&player.player_name));
             let quality = row.name_confidence + row.band_confidence * 0.1 + if row.score.is_some() { 0.05 } else { 0.0 };
-            match ranked.get(&row.rank) {
+            match ranked.get(&key) {
                 Some((_, q)) if *q >= quality => {}
                 _ => {
-                    ranked.insert(row.rank, (player, quality));
+                    ranked.insert(key, (player, quality));
                 }
             }
         }
     }
     // The podium shows the top names large and clean: prefer them when they are the same name as the table's reading.
     for (rank, (name, confidence)) in &podium_names {
-        if let Some((player, _)) = ranked.get_mut(rank) {
-            if *confidence >= 0.8 && *confidence + 0.02 >= player.confidence.unwrap_or(0.0) as f32 && similar_names(&player.player_name, name) {
+        for ((r, _), (player, _)) in ranked.iter_mut() {
+            if r == rank && *confidence >= 0.8 && *confidence + 0.02 >= player.confidence.unwrap_or(0.0) as f32 && similar_names(&player.player_name, name) {
                 player.player_name = name.chars().take(80).collect();
                 player.confidence = Some(*confidence as f64);
                 player.flagged = false;
@@ -183,22 +184,25 @@ pub fn parse_pages(pages: &[StandingsPage], team: &TeamContext, known_team_names
         let Some(score) = player.score else { continue };
         let above = ranked.values().filter(|(p, _)| p.score.is_some_and(|s| s >= score)).map(|(p, _)| p.rank).max();
         let below = ranked.values().filter(|(p, _)| p.score.is_some_and(|s| s <= score)).map(|(p, _)| p.rank).min();
-        let candidate = match (above, below) {
-            (Some(a), Some(b)) if b > a + 1 => (a + 1..b).find(|r| !ranked.contains_key(r)),
-            (Some(a), None) => (a + 1..=100).find(|r| !ranked.contains_key(r)),
-            (None, Some(b)) if b > 1 => (1..b).rev().find(|r| !ranked.contains_key(r)),
+        let tie_rank = ranked.values().find(|(p, _)| p.score == Some(score)).map(|(p, _)| p.rank);
+        let candidate = tie_rank.or_else(|| match (above, below) {
+            (Some(a), Some(b)) if b > a + 1 => (a + 1..b).find(|r| !ranked.keys().any(|(rk, _)| rk == r)),
+            (Some(a), None) => (a + 1..=100).find(|r| !ranked.keys().any(|(rk, _)| rk == r)),
+            (None, Some(b)) if b > 1 => (1..b).rev().find(|r| !ranked.keys().any(|(rk, _)| rk == r)),
             _ => None,
-        };
+        });
         if let Some(rank) = candidate {
             player.rank = rank;
             player.placement = rank;
             player.points = Some(event_points_for_rank(rank));
             player.flagged = true;
-            ranked.insert(rank, (player, quality));
+            let key = (rank, player_key(&player.player_name));
+            ranked.insert(key, (player, quality));
         }
     }
 
     let mut players: Vec<Player> = ranked.into_values().map(|(p, _)| p).collect();
+    players.sort_by(|a, b| a.rank.cmp(&b.rank).then_with(|| a.player_name.cmp(&b.player_name)));
 
     // Header metadata from the first page that has any.
     let header = pages.iter().map(|p| &p.header).find(|h| !h.title.is_empty() || !h.left_team.is_empty());
@@ -374,9 +378,13 @@ pub fn apply_corrections(mut parsed: Parsed, corrections: &[Correction]) -> Pars
 pub fn same_event_name(a: &str, b: &str) -> bool {
     let (ka, kb) = (normalize_key(a).replace(' ', ""), normalize_key(b).replace(' ', ""));
     if ka.is_empty() || kb.is_empty() {
-        return ka == kb;
+        return true;
     }
     if ka == kb {
+        return true;
+    }
+    let is_generic = |k: &str| k == "teamevent" || k == "event";
+    if is_generic(&ka) || is_generic(&kb) {
         return true;
     }
     let (la, lb) = (ka.chars().count(), kb.chars().count());

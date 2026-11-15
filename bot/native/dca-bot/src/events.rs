@@ -202,7 +202,7 @@ impl EventHandler for Handler {
                 spreadsheet::handle_message(&app, &message).await;
             });
         }
-        if message.content.starts_with(commands::PREFIX) && !message.author.bot {
+        if (message.content.starts_with(commands::PREFIX) || message.content.starts_with('>')) && !message.author.bot {
             tokio::spawn(commands::dispatch_text(app, message));
         }
     }

@@ -8,7 +8,7 @@ use crate::imaging::*;
 use crate::names::{NameReader, ReadName};
 use crate::ocr::{crop_quad, Ocr, Pt, Script, TextLine};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct StandingsRow {
     pub rank: u32,
     pub rank_read: bool,
@@ -325,8 +325,8 @@ pub fn read_standings(ocr: &Ocr, names: &NameReader, source: &Rgb, first_lines: 
             .filter(|&i| usable(i) && tokens.lines[i].text.chars().any(|c| c.is_alphabetic()))
             .max_by(|&a, &b| tokens.lines[a].w().partial_cmp(&tokens.lines[b].w()).unwrap())
             .or_else(|| {
-                // Purely numeric / symbol names: the widest token that is not the rank-like first one.
-                members.iter().copied().filter(|&i| usable(i)).max_by(|&a, &b| tokens.lines[a].w().partial_cmp(&tokens.lines[b].w()).unwrap())
+                // Purely numeric / symbol names: the widest token that is not rank-like.
+                members.iter().copied().filter(|&i| usable(i) && !tokens.lines[i].text.trim().ends_with('.')).max_by(|&a, &b| tokens.lines[a].w().partial_cmp(&tokens.lines[b].w()).unwrap())
             });
         let Some(main) = main else { continue };
         let main_line = &tokens.lines[main];
@@ -591,7 +591,7 @@ pub fn rotate(src: &Rgb, degrees: f32) -> Rgb {
 /// Ranks count up by one down a page. Overlapping screenshots repeat rows (same score and name): the repeats are
 /// dropped first. Then the rank that most rows agree on (rank minus position) wins, which fills in unreadable
 /// ranks and corrects isolated misreads; rows that never fit are dropped.
-fn repair_ranks(mut rows: Vec<StandingsRow>, pitch: f32) -> Vec<StandingsRow> {
+pub fn repair_ranks(mut rows: Vec<StandingsRow>, pitch: f32) -> Vec<StandingsRow> {
     rows.sort_by(|a, b| a.cy.partial_cmp(&b.cy).unwrap());
     if rows.is_empty() {
         return rows;
@@ -630,6 +630,14 @@ fn repair_ranks(mut rows: Vec<StandingsRow>, pitch: f32) -> Vec<StandingsRow> {
         if expected >= 1 && (!row.rank_read || row.rank as i64 != expected) {
             row.rank = expected as u32;
             row.rank_read = false;
+        }
+    }
+    // When adjacent rows have identical non-zero scores, they tied: assign the same rank as the tied predecessor.
+    for i in 1..rows.len() {
+        if let (Some(cur_s), Some(prev_s)) = (rows[i].score, rows[i - 1].score) {
+            if cur_s > 0 && cur_s == prev_s {
+                rows[i].rank = rows[i - 1].rank;
+            }
         }
     }
     rows.retain(|r| r.rank >= 1);
@@ -672,6 +680,12 @@ pub fn respace_title(title: &str) -> String {
     out
 }
 
+pub fn looks_like_team_token(text: &str) -> bool {
+    let t = text.trim();
+    let lower = t.to_lowercase();
+    lower.ends_with("tm") || t.contains('™') || t.contains("\u{2122}") || lower.contains("discord") || lower.contains("clan") || lower.contains("team")
+}
+
 /// Fix the trademark artefacts OCR produces for team names ("Discord 3TM", "Discord 3\u{2122}M") and snap to a
 /// known team name when it is clearly the same team.
 pub fn clean_team_label(raw: &str, known: &[String]) -> String {
@@ -694,9 +708,8 @@ pub fn clean_team_label(raw: &str, known: &[String]) -> String {
     let mut cleaned = text.replace("\u{2122}M", "\u{2122}").replace("\u{2122}m", "\u{2122}");
     for suffix in ["TM", "Tm", "tm"] {
         if let Some(stripped) = cleaned.strip_suffix(suffix) {
-            if stripped.chars().last().is_some_and(|c| c.is_ascii_digit()) {
-                cleaned = format!("{stripped}\u{2122}");
-            }
+            cleaned = format!("{}\u{2122}", stripped.trim_end());
+            break;
         }
     }
     cleaned
@@ -709,60 +722,111 @@ fn read_header(lines: &[TextLine], cut_y: f32) -> StandingsHeader {
         return header;
     }
 
-    // Candidate title / team-name lines: real words, not the currency counters or UI glyphs.
+    let vs = above.iter().find(|l| norm(&l.text) == "vs");
+
+    // Candidate title / team-name lines: real words, not currency counters or UI glyphs.
     let mut words: Vec<&TextLine> = above.iter().copied().filter(|l| l.confidence >= 0.5 && l.text.chars().filter(|c| c.is_alphabetic()).count() >= 3 && norm(&l.text) != "vs").collect();
     words.sort_by(|a, b| a.cy().partial_cmp(&b.cy()).unwrap());
     if words.is_empty() {
         return header;
     }
 
-    // Group by height of the line; the topmost group is the title when it is a single centred line.
-    let mut groups: Vec<Vec<&TextLine>> = Vec::new();
-    for l in words {
-        match groups.last_mut() {
-            Some(g) if (l.cy() - g[0].cy()).abs() <= g[0].h().max(l.h()) * 0.7 => g.push(l),
-            _ => groups.push(vec![l]),
+    // Candidate team lines vs title lines:
+    // A title is never a team token (ends in TM/™ or contains team keywords), and sits above vs / team lines.
+    let (left_cand, right_cand, title_cand) = if let Some(vs_line) = vs {
+        let left = words.iter().copied().filter(|l| l.cx() < vs_line.cx()).filter(|l| (l.cy() - vs_line.cy()).abs() <= vs_line.h().max(l.h()) * 3.0).max_by(|a, b| {
+            let ta = looks_like_team_token(&a.text) as i32;
+            let tb = looks_like_team_token(&b.text) as i32;
+            ta.cmp(&tb).then(a.w().partial_cmp(&b.w()).unwrap())
+        });
+        let right = words.iter().copied().filter(|l| l.cx() > vs_line.cx()).filter(|l| (l.cy() - vs_line.cy()).abs() <= vs_line.h().max(l.h()) * 3.0).max_by(|a, b| {
+            let ta = looks_like_team_token(&a.text) as i32;
+            let tb = looks_like_team_token(&b.text) as i32;
+            ta.cmp(&tb).then(a.w().partial_cmp(&b.w()).unwrap())
+        });
+        let title = words
+            .iter()
+            .copied()
+            .filter(|l| !looks_like_team_token(&l.text))
+            .filter(|l| Some(*l as *const TextLine) != left.map(|t| t as *const TextLine) && Some(*l as *const TextLine) != right.map(|t| t as *const TextLine))
+            .filter(|l| l.cy() < vs_line.cy() - vs_line.h() * 0.4)
+            .max_by(|a, b| a.w().partial_cmp(&b.w()).unwrap());
+        (left, right, title)
+    } else {
+        // Without 'vs': group by vertical position
+        let mut groups: Vec<Vec<&TextLine>> = Vec::new();
+        for l in words.iter().copied() {
+            match groups.last_mut() {
+                Some(g) if (l.cy() - g[0].cy()).abs() <= g[0].h().max(l.h()) * 0.7 => g.push(l),
+                _ => groups.push(vec![l]),
+            }
         }
-    }
-
-    let vs = above.iter().find(|l| norm(&l.text) == "vs");
-    let (title_group, team_group) = if groups.len() >= 2 && (groups[0].len() == 1 || groups[1].len() >= 2) { (Some(&groups[0]), Some(&groups[1])) } else { (None, groups.first()) };
-
-    if let Some(group) = title_group {
-        // Only a single line counts as the title.
-        if group.len() == 1 {
-            header.title = respace_title(&group[0].text);
-        }
-    }
-    let mut team_lines: Vec<&TextLine> = team_group.cloned().unwrap_or_default();
-    team_lines.sort_by(|a, b| a.cx().partial_cmp(&b.cx()).unwrap());
-    let (left, right) = match (vs, team_lines.len()) {
-        (Some(vs), n) if n >= 2 => (
-            team_lines.iter().copied().filter(|l| l.cx() < vs.cx()).max_by(|a, b| a.w().partial_cmp(&b.w()).unwrap()),
-            team_lines.iter().copied().filter(|l| l.cx() > vs.cx()).max_by(|a, b| a.w().partial_cmp(&b.w()).unwrap()),
-        ),
-        (_, n) if n >= 2 => (team_lines.first().copied(), team_lines.last().copied()),
-        _ => (None, None),
+        let (title, team_group) = if groups.len() >= 2 && !groups[0].iter().any(|l| looks_like_team_token(&l.text)) { (groups[0].first().copied(), Some(&groups[1])) } else { (None, groups.first()) };
+        let mut team_lines: Vec<&TextLine> = team_group.cloned().unwrap_or_default();
+        team_lines.sort_by(|a, b| a.cx().partial_cmp(&b.cx()).unwrap());
+        let (l, r) = if team_lines.len() >= 2 {
+            (team_lines.first().copied(), team_lines.last().copied())
+        } else if team_lines.len() == 1 {
+            let line = team_lines[0];
+            let mid = above.iter().map(|a| a.cx()).sum::<f32>() / above.len().max(1) as f32;
+            if line.cx() < mid {
+                (Some(line), None)
+            } else {
+                (None, Some(line))
+            }
+        } else {
+            (None, None)
+        };
+        (l, r, title)
     };
-    if let Some(l) = left {
+
+    if let Some(t) = title_cand {
+        header.title = respace_title(&t.text);
+    }
+    if let Some(l) = left_cand {
         header.left_team = l.text.trim().to_string();
     }
-    if let Some(r) = right {
+    if let Some(r) = right_cand {
         header.right_team = r.text.trim().to_string();
     }
 
-    let score_for = |team: Option<&TextLine>| -> Option<u64> {
-        let team = team?;
+    let score_for = |team: Option<&TextLine>, is_left: bool| -> Option<u64> {
+        let vs_cx = vs.map(|v| v.cx());
         above
             .iter()
-            .filter(|l| is_numeric_token(&l.text) && l.cy() > team.cy() && l.cy() < team.cy() + team.h() * 3.5)
-            .filter(|l| (l.cx() - team.cx()).abs() < team.w() * 0.75)
-            .min_by(|a, b| (a.cy() - team.cy()).abs().partial_cmp(&(b.cy() - team.cy()).abs()).unwrap())
+            .filter(|l| is_numeric_token(&l.text))
+            .filter(|l| {
+                if let Some(vcx) = vs_cx {
+                    if is_left {
+                        l.cx() < vcx
+                    } else {
+                        l.cx() > vcx
+                    }
+                } else if let Some(t) = team {
+                    (l.cx() - t.cx()).abs() < t.w().max(100.0) * 1.5
+                } else {
+                    false
+                }
+            })
+            .filter(|l| {
+                if let Some(t) = team {
+                    l.cy() > t.cy() && l.cy() < t.cy() + t.h() * 4.5
+                } else if let Some(vs_line) = vs {
+                    l.cy() >= vs_line.cy() - vs_line.h() && l.cy() <= vs_line.cy() + vs_line.h() * 4.5
+                } else {
+                    true
+                }
+            })
+            .min_by(|a, b| {
+                let dist_a = team.map_or(0.0, |t| (a.cy() - t.cy()).abs());
+                let dist_b = team.map_or(0.0, |t| (b.cy() - t.cy()).abs());
+                dist_a.partial_cmp(&dist_b).unwrap()
+            })
             .and_then(|l| numeric_value(&l.text))
             .filter(|v| *v < 1_000_000)
     };
-    header.left_score = score_for(left);
-    header.right_score = score_for(right);
+    header.left_score = score_for(left_cand, true);
+    header.right_score = score_for(right_cand, false);
     header
 }
 
@@ -836,7 +900,7 @@ pub fn read_podium(names: &NameReader, page: &Rgb, lines: &[TextLine]) -> Option
             !(k.contains("winner") || k.contains("touch") || k.contains("continue") || k.contains("bonus") || k.contains("reward"))
         })
         .collect();
-    let title = words.iter().copied().filter(|l| l.cy() < h * 0.3).max_by(|a, b| a.h().partial_cmp(&b.h()).unwrap().then(b.cy().partial_cmp(&a.cy()).unwrap()));
+    let title = words.iter().copied().filter(|l| l.cy() < h * 0.3 && !looks_like_team_token(&l.text)).max_by(|a, b| a.h().partial_cmp(&b.h()).unwrap().then(b.cy().partial_cmp(&a.cy()).unwrap()));
     if let Some(t) = title {
         header.title = respace_title(&t.text);
     }

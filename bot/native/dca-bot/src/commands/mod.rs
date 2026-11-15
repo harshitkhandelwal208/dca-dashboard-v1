@@ -6,6 +6,7 @@ pub mod definitions;
 pub mod info;
 pub mod mastery;
 pub mod moderation;
+pub mod recruitment;
 pub mod reminders;
 pub mod roles;
 pub mod spreadsheets;
@@ -55,9 +56,15 @@ pub async fn dispatch_slash(app: Arc<App>, cmd: CommandInteraction) {
     }
 }
 
-/// `-command args` messages.
+/// `-command args` or `>command args` messages.
 pub async fn dispatch_text(app: Arc<App>, message: Message) {
-    let Some(rest) = message.content.strip_prefix(PREFIX) else { return };
+    let rest = if let Some(r) = message.content.strip_prefix(PREFIX) {
+        r
+    } else if let Some(r) = message.content.strip_prefix('>') {
+        r
+    } else {
+        return;
+    };
     if message.author.bot {
         return;
     }
@@ -67,6 +74,8 @@ pub async fn dispatch_text(app: Arc<App>, message: Message) {
     }
     let name = args.remove(0).to_lowercase();
     let result = match name.as_str() {
+        "recruiter" => recruitment::text_recruiter(&app, &message, &args).await,
+        "unrecruiter" => recruitment::text_unrecruiter(&app, &message, &args).await,
         "announce" => info::text_announce(&app, &message).await,
         "bam" => info::text_bam(&app, &message).await,
         "ban" => moderation::text_ban(&app, &message, &args).await,
@@ -107,10 +116,12 @@ pub const TEXT_COMMANDS: &[(&str, &str)] = &[
     ("mute", "Mutes a user for a specified duration (using Discord's timeout feature)."),
     ("ping", "Check that the bot is alive and how fast it answers."),
     ("pingmessage", "Sends a specific ping message in the channel while preventing duplicates."),
+    ("recruiter", "Assign recruiter role to a user. Usage: >recruiter @nickname"),
     ("snapban", "Thanos-style ban someone out of existence"),
     ("team", "Show team member list"),
     ("temperature", "Get the current temperature of a city"),
     ("unban", "Unbans a user from the server using their ID or username"),
+    ("unrecruiter", "Remove recruiter role from a user. Usage: >unrecruiter @nickname"),
     ("warn", "Warns a user and records it in the database."),
     ("warnings", "Displays all warnings for a user."),
     ("whois", "Displays information about a user."),

@@ -176,6 +176,54 @@ fn same_event_names_tolerate_ocr_noise() {
     assert!(same_event_name("Sky-Rock Samba", "Sky-RockSamba"));
     assert!(same_event_name("Sky-Rock Samba", "Sky-Rock Sarnba"));
     assert!(!same_event_name("Sky-Rock Samba", "Rocky Rush"));
+    assert!(same_event_name("Team Event", "Nitro Strings Attached"));
+    assert!(same_event_name("Nitro Strings Attached", "Team Event"));
+}
+
+#[test]
+fn clean_team_label_formats_tm_correctly() {
+    use dca_core::standings::clean_team_label;
+    assert_eq!(clean_team_label("MIDGARDTM", &[]), "MIDGARD\u{2122}");
+    assert_eq!(clean_team_label("MIDGARD Tm", &[]), "MIDGARD\u{2122}");
+    assert_eq!(clean_team_label("MIDGARDtm", &[]), "MIDGARD\u{2122}");
+    assert_eq!(clean_team_label("Discord 3TM", &[]), "Discord 3\u{2122}");
+    assert_eq!(clean_team_label("Discord", &[]), "Discord");
+}
+
+#[test]
+fn tied_scores_receive_equal_rank_and_points() {
+    use dca_core::standings::{repair_ranks, StandingsHeader, StandingsPage, StandingsRow};
+    let rows = vec![
+        StandingsRow { rank: 61, rank_read: true, name: "Petek".into(), name_confidence: 0.9, score: Some(40679), cy: 100.0, ..Default::default() },
+        StandingsRow { rank: 63, rank_read: true, name: "Verstappen23".into(), name_confidence: 0.9, score: Some(40417), cy: 130.0, ..Default::default() },
+        StandingsRow { rank: 64, rank_read: true, name: "Juhani".into(), name_confidence: 0.9, score: Some(40417), cy: 145.0, ..Default::default() },
+    ];
+    let repaired = repair_ranks(rows, 15.0);
+    assert_eq!(repaired[1].rank, 63);
+    assert_eq!(repaired[2].rank, 63, "Juhani should tie with Verstappen23 at rank 63");
+
+    let page = StandingsPage {
+        rows: repaired,
+        header: StandingsHeader {
+            title: "Nitro Strings Attached".into(),
+            left_team: "Discord 3\u{2122}".into(),
+            right_team: "MIDGARD\u{2122}".into(),
+            left_score: Some(1815),
+            right_score: Some(2706),
+        },
+        raw_text: String::new(),
+        has_final_standings_banner: false,
+        deskew_degrees: 0.0,
+    };
+    let team = TeamContext { name: "Discord 3\u{2122}".into(), own_team_aliases: vec![], own_player_aliases: vec![] };
+    let parsed = parse_pages(&[page], &team, &[]);
+    assert_eq!(parsed.players.len(), 3, "All 3 players must be preserved despite tie");
+    let verstappen = parsed.players.iter().find(|p| p.player_name == "Verstappen23").unwrap();
+    let juhani = parsed.players.iter().find(|p| p.player_name == "Juhani").unwrap();
+    assert_eq!(verstappen.rank, 63);
+    assert_eq!(juhani.rank, 63);
+    assert_eq!(verstappen.points, Some(5));
+    assert_eq!(juhani.points, Some(5));
 }
 
 /// `DCA_STATS_IN=<report cases with the old bot's stats>`: the Rust `summarize` must reproduce them.
