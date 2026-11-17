@@ -78,6 +78,17 @@ async fn resolve_target_user(app: &App, guild_id: GuildId, message: &Message, ar
     None
 }
 
+async fn target_display_name(app: &App, guild_id: GuildId, target_id: UserId) -> String {
+    if let Ok(member) = app.http.get_member(guild_id, target_id).await {
+        return member.nick.or_else(|| member.user.global_name.clone()).unwrap_or(member.user.name);
+    }
+    app.http.get_user(target_id).await.map(|user| user.global_name.unwrap_or(user.name)).unwrap_or_else(|_| "the selected user".into())
+}
+
+async fn role_display_name(app: &App, guild_id: GuildId, role_id: RoleId) -> String {
+    app.guild_roles(guild_id).await.ok().and_then(|(_, roles)| roles.get(&role_id).map(|role| role.name.clone())).unwrap_or_else(|| "the selected role".into())
+}
+
 pub async fn text_recruiter(app: &App, message: &Message, args: &[String]) -> BotResult<()> {
     let Some(guild_id) = message.guild_id else { return Ok(()) };
     if !check_permission(app, message, guild_id, ALLOWED_ROLE_ID).await {
@@ -88,12 +99,11 @@ pub async fn text_recruiter(app: &App, message: &Message, args: &[String]) -> Bo
         message.reply(&app.http, "\u{274c} Please provide a valid user mention or nickname. Usage: `>recruiter @nickname`").await?;
         return Ok(());
     };
+    let target_name = target_display_name(app, guild_id, target_id).await;
+    let role_name = role_display_name(app, guild_id, RECRUITER_ROLE_ID).await;
     match app.http.add_member_role(guild_id, target_id, RECRUITER_ROLE_ID, Some("Assigned via >recruiter")).await {
         Ok(()) => {
-            message
-                .channel_id
-                .send_message(&app.http, CreateMessage::new().content(format!("\u{2705} Assigned role {RECRUITER_ROLE_ID} to user {target_id}.")).allowed_mentions(CreateAllowedMentions::new()))
-                .await?;
+            message.channel_id.send_message(&app.http, CreateMessage::new().content(format!("\u{2705} Assigned {role_name} to {target_name}.")).allowed_mentions(CreateAllowedMentions::new())).await?;
         }
         Err(e) => {
             tracing::warn!("add_member_role failed: {e}");
@@ -113,11 +123,13 @@ pub async fn text_unrecruiter(app: &App, message: &Message, args: &[String]) -> 
         message.reply(&app.http, "\u{274c} Please provide a valid user mention or nickname. Usage: `>unrecruiter @nickname`").await?;
         return Ok(());
     };
+    let target_name = target_display_name(app, guild_id, target_id).await;
+    let role_name = role_display_name(app, guild_id, RECRUITER_ROLE_ID).await;
     match app.http.remove_member_role(guild_id, target_id, RECRUITER_ROLE_ID, Some("Removed via >unrecruiter")).await {
         Ok(()) => {
             message
                 .channel_id
-                .send_message(&app.http, CreateMessage::new().content(format!("\u{2705} Removed role {RECRUITER_ROLE_ID} from user {target_id}.")).allowed_mentions(CreateAllowedMentions::new()))
+                .send_message(&app.http, CreateMessage::new().content(format!("\u{2705} Removed {role_name} from {target_name}.")).allowed_mentions(CreateAllowedMentions::new()))
                 .await?;
         }
         Err(e) => {
@@ -138,6 +150,8 @@ pub async fn text_role_command(app: &App, message: &Message, args: &[String], co
         message.reply(&app.http, format!("\u{274c} Please provide a valid user mention or nickname. Usage: `>{} @nickname`", command.name)).await?;
         return Ok(());
     };
+    let target_name = target_display_name(app, guild_id, target_id).await;
+    let role_name = role_display_name(app, guild_id, command.target_role).await;
     let result = if command.add {
         app.http.add_member_role(guild_id, target_id, command.target_role, Some(&format!("Assigned via >{}", command.name))).await
     } else {
@@ -146,13 +160,10 @@ pub async fn text_role_command(app: &App, message: &Message, args: &[String], co
     match result {
         Ok(()) => {
             let verb = if command.add { "Assigned" } else { "Removed" };
-            let direction = if command.add { "to" } else { "from" };
+            let preposition = if command.add { "to" } else { "from" };
             message
                 .channel_id
-                .send_message(
-                    &app.http,
-                    CreateMessage::new().content(format!("\u{2705} {verb} role {} {direction} user {}.", command.target_role, target_id)).allowed_mentions(CreateAllowedMentions::new()),
-                )
+                .send_message(&app.http, CreateMessage::new().content(format!("\u{2705} {verb} {role_name} {preposition} {target_name}.")).allowed_mentions(CreateAllowedMentions::new()))
                 .await?;
         }
         Err(e) => {
