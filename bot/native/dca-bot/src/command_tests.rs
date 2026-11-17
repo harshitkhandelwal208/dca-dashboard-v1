@@ -422,11 +422,13 @@ async fn recruiter_and_unrecruiter_commands() {
     // 2. Authorized author assigns recruiter role 1082759575087882271
     let assigned = run_text_with_roles(&rig, &format!(">recruiter <@{TARGET}>"), MOD, Some(TARGET), &[ALLOWED]).await;
     assert!(assigned.contains("Assigned role"), "expected success: {assigned}");
+    assert!(!assigned.contains("<@"), "recruiter confirmation must not mention a user or role: {assigned}");
     assert!(rig.mock.roles_of(TARGET).contains(&RECRUITER.to_string()), "role was added in Discord");
 
     // 3. Authorized author removes recruiter role 1082759575087882271
     let removed = run_text_with_roles(&rig, &format!(">unrecruiter <@{TARGET}>"), MOD, Some(TARGET), &[ALLOWED]).await;
     assert!(removed.contains("Removed role"), "expected success: {removed}");
+    assert!(!removed.contains("<@"), "unrecruiter confirmation must not mention a user or role: {removed}");
     assert!(!rig.mock.roles_of(TARGET).contains(&RECRUITER.to_string()), "role was removed from Discord");
 
     // 4. Non-recruitment server
@@ -437,4 +439,31 @@ async fn recruiter_and_unrecruiter_commands() {
     .unwrap();
     let wrong_server = run_text_with_roles(&rig, &format!(">recruiter <@{TARGET}>"), MOD, Some(TARGET), &[ALLOWED]).await;
     assert!(wrong_server.contains("only be used in the recruitment server"), "expected server error: {wrong_server}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn recruitment_team_role_commands_use_their_permission_roles_and_do_not_ping() {
+    let rig = Rig::new("cmd-team-roles", false).await;
+    rig.mock.set_member_roles(TARGET, &[]);
+
+    let commands = [
+        (">discord2", 1570423807951249520_u64, 1354925755728920576_u64, ">undiscord2"),
+        (">discord3", 1570423850037158039_u64, 1570423869079027732_u64, ">undiscord3"),
+        (">dca", 712446912946503802_u64, 724761301129101374_u64, ">undca"),
+    ];
+
+    for (add, permission_role, target_role, remove) in commands {
+        let denied = run_text_with_roles(&rig, &format!("{add} <@{TARGET}>"), MOD, Some(TARGET), &[]).await;
+        assert!(denied.contains("do not have permission"), "{add} should require its permission role: {denied}");
+
+        let assigned = run_text_with_roles(&rig, &format!("{add} <@{TARGET}>"), MOD, Some(TARGET), &[permission_role]).await;
+        assert!(assigned.contains(&target_role.to_string()), "{add} should report the target role: {assigned}");
+        assert!(!assigned.contains("<@"), "{add} confirmation must not mention a user or role: {assigned}");
+        assert!(rig.mock.roles_of(TARGET).contains(&target_role.to_string()), "{add} should add its target role");
+
+        let removed = run_text_with_roles(&rig, &format!("{remove} <@{TARGET}>"), MOD, Some(TARGET), &[permission_role]).await;
+        assert!(removed.contains(&target_role.to_string()), "{remove} should report the target role: {removed}");
+        assert!(!removed.contains("<@"), "{remove} confirmation must not mention a user or role: {removed}");
+        assert!(!rig.mock.roles_of(TARGET).contains(&target_role.to_string()), "{remove} should remove its target role");
+    }
 }

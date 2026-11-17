@@ -109,7 +109,7 @@ pub async fn slash_help(app: &App, r: &Responder) -> BotResult<()> {
 pub async fn text_help(app: &App, msg: &Message) -> BotResult<()> {
     let config = app.config().await;
     let url = dashboard_url(&config);
-    let list = truncate(&super::TEXT_COMMANDS.iter().map(|(n, d)| format!("- `-{n}` - {d}")).collect::<Vec<_>>().join("\n"), 1000);
+    let list = truncate(&super::TEXT_COMMANDS.iter().map(|(n, d)| format!("- `-{n}` - {d}")).collect::<Vec<_>>().join("\n"), 3000);
     let embed = CreateEmbed::new()
         .title("DCA Bot Help")
         .description("Use slash commands for dashboard-backed features. Prefix commands remain available for older moderation utilities.")
